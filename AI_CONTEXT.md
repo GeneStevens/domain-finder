@@ -15,8 +15,8 @@ available domains.
 - `internal/candidates`: candidate loading, normalization, merge, and dedupe
 - `internal/match`: stable candidate result model and classification
 - `internal/report`: filter modes and summary stats
-- `internal/output`: text and JSONL durable rendering
-- `internal/termui`: transient stderr activity-line rendering
+- `internal/output`: deterministic durable text and JSONL rendering
+- `internal/termui`: interactive stderr console rendering
 - `testdata/small`: tiny deterministic fixtures used by tests
 - `testdata/slices`: reserved for small realistic slices, never giant CZDS files
 
@@ -59,12 +59,15 @@ available domains.
 - Report filters:
   - `all`
   - `absent-in-all`
-- Durable text output renders emitted results first, then a deterministic summary.
-- JSONL output emits one stable JSON object per emitted candidate result.
-- Summary is intentionally text-only and is omitted from JSONL output.
-- `internal/termui` renders a single reusable transient activity line on `stderr`.
-- Text mode uses live stderr progress; JSONL mode disables it completely.
-- Durable results always remain on `stdout` or the configured `-out` file.
+- `internal/output` owns deterministic fallback/file rendering.
+- `internal/termui` owns the streaming interactive console on `stderr`.
+- Interactive console prints:
+  - a small startup header
+  - a reusable active candidate line
+  - durable scrolling emitted rows
+  - a compact final completion line
+- Durable results still go to `stdout` or `-out`.
+- JSONL bypasses `termui` entirely.
 
 ## Current CLI capabilities
 
@@ -75,6 +78,8 @@ available domains.
 - `-format text|jsonl` selects a human-readable or machine-readable output mode.
 - `-filter all|absent-in-all` controls which results are emitted.
 - `-out <path>` writes durable output to a file instead of stdout.
+- `-interactive` forces interactive text console mode.
+- `-no-interactive` forces deterministic fallback text mode.
 
 ## Testing rule
 
@@ -90,8 +95,8 @@ fixtures or tiny realistic slices under `testdata/`.
 ## Deferred work
 
 - No concurrency yet.
-- No full-screen TUI.
-- No advanced terminal UI beyond a single stderr activity line.
+- No full-screen TUI framework.
+- No advanced terminal UI beyond the streaming stderr console.
 - No registrar checks or probabilistic availability logic.
 - No filename-based zone inference.
 - No large-file optimization beyond streaming reads.

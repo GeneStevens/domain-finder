@@ -15,6 +15,8 @@ import (
 	"github.com/gene/domain-finder/internal/termui"
 )
 
+var stderrIsTTY = termui.IsTTY
+
 // Run executes the CLI entrypoint.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("domainfinder", flag.ContinueOnError)
@@ -27,6 +29,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	outPath := fs.String("out", "", "write output to this file instead of stdout")
 	candidateFile := fs.String("candidate-file", "", "read candidates from a text file")
 	candidateStdin := fs.Bool("candidate-stdin", false, "read candidates from stdin")
+	forceInteractive := fs.Bool("interactive", false, "force interactive text console")
+	noInteractive := fs.Bool("no-interactive", false, "disable interactive text console")
 	fs.Var(&zones, "zone", "named zone file in the form zone=path (repeatable)")
 	fs.Var(&cliCandidates, "candidate", "full candidate domain name to query (repeatable)")
 
@@ -80,7 +84,10 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 
 	switch *format {
 	case "text":
-		return runTextMode(multi, loadedCandidates, filterMode, writer, stderr)
+		if termui.ShouldUseInteractive(*format, *forceInteractive, *noInteractive, stderr, stderrIsTTY) {
+			return runInteractiveTextMode(multi, loadedCandidates, filterMode, writer, stderr)
+		}
+		return runDeterministicTextMode(multi, loadedCandidates, filterMode, writer)
 	case "jsonl":
 		allResults := match.ClassifyAll(multi, loadedCandidates)
 		filteredResults := report.ApplyFilter(allResults, filterMode)
@@ -90,41 +97,48 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	}
 }
 
-func runTextMode(multi *index.Multi, candidates []string, filterMode report.FilterMode, resultWriter, progressWriter io.Writer) error {
-	activity := termui.NewActivityLine(progressWriter)
+func runDeterministicTextMode(multi *index.Multi, candidates []string, filterMode report.FilterMode, resultWriter io.Writer) error {
+	allResults := match.ClassifyAll(multi, candidates)
+	filteredResults := report.ApplyFilter(allResults, filterMode)
+	summary := report.Summarize(allResults, filteredResults)
+	return output.WriteText(resultWriter, filteredResults, summary)
+}
+
+func runInteractiveTextMode(multi *index.Multi, candidates []string, filterMode report.FilterMode, resultWriter, progressWriter io.Writer) error {
 	allResults := make([]match.CandidateResult, 0, len(candidates))
 	emittedResults := make([]match.CandidateResult, 0, len(candidates))
+	console := termui.NewConsole(progressWriter, multi.ZoneNames(), candidates)
+
+	if err := console.Start(len(candidates), filterMode); err != nil {
+		return err
+	}
 
 	for i, candidate := range candidates {
+		if err := console.UpdateActive(i+1, len(candidates), candidate); err != nil {
+			return err
+		}
+
 		result := match.Classify(multi, candidate)
 		allResults = append(allResults, result)
 
-		emitted := report.ShouldEmit(result, filterMode)
-		status := "skipped"
-		if emitted {
-			if err := activity.Clear(); err != nil {
-				return err
-			}
-			if err := output.WriteTextResult(resultWriter, result); err != nil {
-				return err
-			}
-			emittedResults = append(emittedResults, result)
-			status = "emitted"
+		if !report.ShouldEmit(result, filterMode) {
+			continue
 		}
 
-		if err := activity.Update(fmt.Sprintf("[%d/%d] %s %s", i+1, len(candidates), result.Candidate, status)); err != nil {
+		if err := console.EmitRow(result); err != nil {
 			return err
 		}
+		if err := output.WriteTextResult(resultWriter, result); err != nil {
+			return err
+		}
+		emittedResults = append(emittedResults, result)
 	}
 
 	summary := report.Summarize(allResults, emittedResults)
-	if err := activity.Clear(); err != nil {
+	if err := console.Finish(summary); err != nil {
 		return err
 	}
-	if err := output.WriteTextSummary(resultWriter, summary); err != nil {
-		return err
-	}
-	return activity.Finish(fmt.Sprintf("checked %d candidate(s), emitted %d", summary.TotalCandidates, summary.EmittedResults))
+	return output.WriteTextSummary(resultWriter, summary)
 }
 
 type zoneFlag map[string]string
