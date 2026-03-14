@@ -218,7 +218,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		}
 		return runDeterministicTextMode(context.Background(), *backendName, lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, writer, stderr, auditLogger)
 	case "jsonl":
-		allResults, filteredResults, err := processCandidates(context.Background(), lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, nil, nil, func(event progressEvent) error {
+		allResults, filteredResults, _, err := processCandidates(context.Background(), lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, nil, nil, func(event progressEvent) error {
 			return writeAuditRecord(auditLogger, *backendName, lookup.ZoneNames(), event.Result, event.ReportEmitted, false)
 		})
 		if err != nil {
@@ -232,10 +232,13 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 }
 
 func runDeterministicTextMode(ctx context.Context, backendName string, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, statusWriter io.Writer, auditLogger *audit.Logger) error {
-	allResults, filteredResults, err := processCandidates(ctx, lookup, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, nil, makeGenerationNotifier(statusWriter), func(event progressEvent) error {
+	allResults, filteredResults, diagnostics, err := processCandidates(ctx, lookup, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, nil, makeGenerationNotifier(statusWriter), func(event progressEvent) error {
 		return writeAuditRecord(auditLogger, backendName, lookup.ZoneNames(), event.Result, event.ReportEmitted, false)
 	})
 	if err != nil {
+		return err
+	}
+	if err := writeGenerationDiagnostics(statusWriter, diagnostics); err != nil {
 		return err
 	}
 	summary := report.Summarize(allResults, filteredResults)
@@ -252,7 +255,7 @@ func runInteractiveTextMode(ctx context.Context, backendName string, lookup back
 		return err
 	}
 
-	allResults, emittedResults, err := processCandidates(ctx, lookup, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, func(event progressEvent) error {
+	allResults, emittedResults, diagnostics, err := processCandidates(ctx, lookup, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, func(event progressEvent) error {
 		if err := console.UpdateActive(event.Index, totalPlanned, event.Candidate); err != nil {
 			return err
 		}
@@ -275,6 +278,9 @@ func runInteractiveTextMode(ctx context.Context, backendName string, lookup back
 	if err != nil {
 		return err
 	}
+	if err := writeGenerationDiagnosticsToConsole(console, diagnostics); err != nil {
+		return err
+	}
 
 	summary := report.Summarize(allResults, emittedResults)
 	if err := console.Finish(summary); err != nil {
@@ -294,9 +300,10 @@ type progressEvent struct {
 	ReportEmitted bool
 }
 
-func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, onProgress func(progressEvent) error, onGenerationEvent func(openai.Event) error, onAudit func(progressEvent) error) ([]match.CandidateResult, []match.CandidateResult, error) {
+func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, onProgress func(progressEvent) error, onGenerationEvent func(openai.Event) error, onAudit func(progressEvent) error) ([]match.CandidateResult, []match.CandidateResult, candidates.GenerationDiagnostics, error) {
 	allResults := make([]match.CandidateResult, 0, len(initialCandidates))
 	emittedResults := make([]match.CandidateResult, 0, len(initialCandidates))
+	var diagnostics candidates.GenerationDiagnostics
 	processedCount := 0
 
 	processBatch := func(candidates []string) error {
@@ -333,11 +340,11 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 	}
 
 	if err := processBatch(initialCandidates); err != nil {
-		return nil, nil, err
+		return nil, nil, diagnostics, err
 	}
 
 	if generatePrompt == "" {
-		return allResults, emittedResults, nil
+		return allResults, emittedResults, diagnostics, nil
 	}
 
 	fulfiller := openai.NewFulfiller(generator, cfg.Generate)
@@ -346,16 +353,17 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 			AvoidSubstrings: cfg.Generate.AvoidSubstrings,
 			QualityProfile:  cfg.Generate.QualityProfile,
 		})
+		diagnostics.MergeBatch(report)
 		if err := processBatch(report.Accepted); err != nil {
 			return candidates.BatchReport{}, err
 		}
 		return report, nil
 	}, onGenerationEvent)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, diagnostics, err
 	}
 
-	return allResults, emittedResults, nil
+	return allResults, emittedResults, diagnostics, nil
 }
 
 func writeAuditRecord(logger *audit.Logger, backendName string, requestedZones []string, result match.CandidateResult, reportEmitted, interactiveEmitted bool) error {
@@ -377,6 +385,30 @@ func makeGenerationNotifier(w io.Writer) func(openai.Event) error {
 		_, err := fmt.Fprintln(w, line)
 		return err
 	}
+}
+
+func writeGenerationDiagnostics(w io.Writer, diagnostics candidates.GenerationDiagnostics) error {
+	if w == nil {
+		return nil
+	}
+	for _, line := range diagnostics.Lines() {
+		if _, err := fmt.Fprintln(w, line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeGenerationDiagnosticsToConsole(console *termui.Console, diagnostics candidates.GenerationDiagnostics) error {
+	if console == nil {
+		return nil
+	}
+	for _, line := range diagnostics.Lines() {
+		if err := console.Note(line); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func renderGenerationEvent(event openai.Event) string {

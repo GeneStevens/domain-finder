@@ -1151,6 +1151,14 @@ func TestRunTextWorkflowRejectsBannedGeneratedStems(t *testing.T) {
 	if !strings.Contains(stderr.String(), "banned 1") {
 		t.Fatalf("stderr = %q, want lexical-ban aggregate feedback", stderr.String())
 	}
+	for _, fragment := range []string{
+		"generation diagnostics",
+		"banned_substring: 2",
+	} {
+		if !strings.Contains(stderr.String(), fragment) {
+			t.Fatalf("stderr missing %q:\n%s", fragment, stderr.String())
+		}
+	}
 }
 
 func TestRunTextWorkflowRejectsWeakGeneratedStems(t *testing.T) {
@@ -1195,6 +1203,67 @@ func TestRunTextWorkflowRejectsWeakGeneratedStems(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "quality_rejected 1") {
 		t.Fatalf("stderr = %q, want quality rejection aggregate feedback", stderr.String())
+	}
+	for _, fragment := range []string{
+		"generation diagnostics",
+		"quality.pharma_like_suffix: 2",
+		"quality.soft_open_ending: 2",
+		"quality.mushy_vowel_flow: 2",
+		"quality.weak_consonant_shape: 2",
+	} {
+		if !strings.Contains(stderr.String(), fragment) {
+			t.Fatalf("stderr missing %q:\n%s", fragment, stderr.String())
+		}
+	}
+}
+
+func TestRunInteractiveGenerationDiagnosticsSummary(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  quality_profile: industrial\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		responses: []fakeStemResponse{
+			{stems: []string{"theravia", "noviq"}},
+			{stems: []string{"veloria", "traktor"}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-interactive",
+		"-filter", "absent-in-all",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-generate", "industrial infrastructure names",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty interactive stdout", stdout.String())
+	}
+
+	progress := stderr.String()
+	for _, fragment := range []string{
+		"generation diagnostics",
+		"quality.pharma_like_suffix: 2",
+		"Done: checked 2 | emitted 2 | strong 2\n",
+	} {
+		if !strings.Contains(progress, fragment) {
+			t.Fatalf("stderr missing %q:\n%s", fragment, progress)
+		}
 	}
 }
 
@@ -1318,6 +1387,9 @@ func TestRunTextWorkflowWithDegradedGeneratedBatch(t *testing.T) {
 		"generation: batch 1 attempt 2 requesting 2 stems",
 		"generation: batch 1 attempt 2 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more",
 		"generation: complete, accepted 2 stems",
+		"generation diagnostics",
+		"invalid: 1",
+		"duplicates: 1",
 	}
 	for _, fragment := range wantProgress {
 		if !strings.Contains(progress, fragment) {

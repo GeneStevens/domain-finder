@@ -153,7 +153,25 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - Generated stems containing banned substrings are rejected before lookup and counted as unusable batch output
 - Generated stems can also be rejected by the configured quality profile before lookup, and those rejections are counted separately in generation progress
 - Interactive and text-mode generation runs emit concise stderr status lines showing batch requests, accepted/rejected counts, retries, and completion/failure
+- At the end of a generation run, text-mode runs also print a compact `generation diagnostics` block summarizing dominant rejection categories across the whole run
 - JSONL mode stays machine-readable and does not emit live generation progress
+
+## Generation diagnostics summary
+
+- After a real generation run in text mode, `domain-finder` prints a compact run-level diagnostics block on `stderr`
+- This summary aggregates generated-stem rejection signals across the run, including:
+  - `banned_substring`
+  - `quality.<reason>`
+  - `invalid`
+  - `duplicates`
+- Quality reasons reuse the same explainable categories used by the generated quality filter, such as `quality.pharma_like_suffix` or `quality.soft_open_ending`
+- The goal is operator tuning:
+  - identify which failure families are dominating
+  - adjust prompts, lexical bans, or the active quality profile accordingly
+- This diagnostics summary is separate from:
+  - deterministic text result output
+  - JSONL result output
+  - the audit log
 
 ## Audit log
 
@@ -423,6 +441,9 @@ Typical operator feedback during generation:
 
 - `generation: batch 1 attempt 1 requesting 3 stems`
 - `generation: batch 1 attempt 1 accepted 2, invalid 1, banned 0, quality_rejected 1, duplicates 0, need 1 more`
+- `generation diagnostics`
+- `  quality.pharma_like_suffix: 4`
+- `  duplicates: 2`
 - `generation: retrying batch 1 attempt 2 (1/2) after transient error`
 - `generation: complete, accepted 6 stems`
 

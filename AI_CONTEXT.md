@@ -14,6 +14,7 @@ available domains.
 - `internal/index`: single-zone exact-match index, multi-zone lookup, loader
 - `internal/backend`: backend-neutral lookup interface plus file and PostgreSQL backends
 - `internal/candidates`: stem loading, normalization, merge, and dedupe
+- `internal/candidates`: also owns run-level generated rejection diagnostics aggregation
 - `internal/config`: YAML config loading and precedence resolution
 - `internal/genquality`: generated-stem quality profiles and explainable rule-based scoring
 - `internal/match`: stable stem result model and per-zone classification
@@ -104,6 +105,7 @@ available domains.
   - prompt guidance is not validation; generated stems still pass through the normal candidate validation gate
   - `avoid_substrings` is also hard-enforced after generation, before lookup
   - generated stems can also be rejected by a generated-only quality profile, currently `industrial`
+  - text-mode generation runs now print a compact end-of-run diagnostics block summarizing dominant rejection categories
   - dry-run uses the same config-resolution and prompt-builder path as a real run
 
 ## Result model
