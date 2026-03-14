@@ -1,19 +1,24 @@
 package match
 
 import (
+	"fmt"
+
 	"github.com/gene/domain-finder/internal/index"
-	"github.com/gene/domain-finder/internal/zonefile"
 )
 
-// Classify returns a stable result for one candidate across all loaded zones.
+// ComposeLookupName builds the FQDN checked for a candidate stem in one zone.
+func ComposeLookupName(candidate, zone string) string {
+	return fmt.Sprintf("%s.%s", candidate, zone)
+}
+
+// Classify returns a stable result for one candidate stem across all loaded zones.
 func Classify(multi *index.Multi, candidate string) CandidateResult {
-	normalized := zonefile.NormalizeDomain(candidate)
 	zoneNames := multi.ZoneNames()
 	zones := make([]ZonePresence, 0, len(zoneNames))
 	presentInAny := false
 
 	for _, zoneName := range zoneNames {
-		present := multi.Contains(zoneName, normalized)
+		present := multi.Contains(zoneName, ComposeLookupName(candidate, zoneName))
 		zones = append(zones, ZonePresence{
 			Zone:    zoneName,
 			Present: present,
@@ -24,7 +29,7 @@ func Classify(multi *index.Multi, candidate string) CandidateResult {
 	}
 
 	return CandidateResult{
-		Candidate:    normalized,
+		Candidate:    candidate,
 		Zones:        zones,
 		PresentInAny: presentInAny,
 		AbsentInAll:  !presentInAny,

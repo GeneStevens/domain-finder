@@ -12,20 +12,23 @@ available domains.
 - `internal/app`: argument parsing and top-level lookup orchestration
 - `internal/zonefile`: zone opening, gzip detection, streaming reader, parser
 - `internal/index`: single-zone exact-match index, multi-zone lookup, loader
-- `internal/candidates`: candidate loading, normalization, merge, and dedupe
-- `internal/match`: stable candidate result model and classification
+- `internal/candidates`: stem loading, normalization, merge, and dedupe
+- `internal/match`: stable stem result model and per-zone classification
 - `internal/report`: filter modes and summary stats
 - `internal/output`: deterministic durable text and JSONL rendering
 - `internal/termui`: interactive stderr console rendering
 - `testdata/small`: tiny deterministic fixtures used by tests
 - `testdata/slices`: reserved for small realistic slices, never giant CZDS files
 
-## Domain normalization policy
+## Candidate model
 
-- Stored domains are normalized FQDNs: lowercase and trailing-dot stripped.
-- Candidate ingestion normalizes CLI, file, and stdin inputs the same way.
-- Candidates must be full FQDNs.
-- Relative labels like `example` are rejected in this phase.
+- Candidate inputs are stems, not full FQDNs.
+- Loaded zones determine the TLDs checked for each stem.
+- Matching composes `<stem>.<zone>` internally.
+- Example:
+  - candidate `example`
+  - zones `com`, `net`
+  - lookups `example.com`, `example.net`
 
 ## Candidates layer
 
@@ -35,24 +38,26 @@ available domains.
   - optional `-candidate-stdin`
 - File/stdin format:
   - plain text
-  - one candidate per line
+  - one stem per line
   - blank lines ignored
   - `#` comment lines ignored
 - Merge order:
-  - CLI candidates first
-  - file candidates second
-  - stdin candidates third
+  - CLI stems first
+  - file stems second
+  - stdin stems third
 - Dedupe:
   - preserve first-seen order across all sources
 - Error handling:
-  - invalid or empty normalized candidates return an error
+  - invalid stems return an error
+- Current scope:
+  - single-label stems only
 
 ## Result model
 
-- `candidate`: normalized FQDN candidate string
+- `candidate`: normalized stem string
 - `zones`: ordered `zone/present` results in deterministic zone-name order
-- `present_in_any`: true if found in at least one loaded zone
-- `absent_in_all`: true if not found in any loaded zone
+- `present_in_any`: true if the stem exists in at least one loaded zone
+- `absent_in_all`: true if the stem is absent from all loaded zones
 
 ## Report, output, and terminal UX layers
 
@@ -63,8 +68,8 @@ available domains.
 - `internal/termui` owns the streaming interactive console on `stderr`.
 - Interactive console prints:
   - a small startup header
-  - a reusable active candidate line
-  - durable scrolling emitted rows
+  - a reusable active stem line
+  - durable scrolling emitted stem rows
   - a compact final completion line
 - Durable results still go to `stdout` or `-out`.
 - JSONL bypasses `termui` entirely.
@@ -72,9 +77,9 @@ available domains.
 ## Current CLI capabilities
 
 - Repeated `-zone name=path` flags load explicitly named zones.
-- Repeated `-candidate fqdn` flags add explicit candidates.
-- `-candidate-file <path>` loads candidates from a text file.
-- `-candidate-stdin` loads candidates from stdin.
+- Repeated `-candidate stem` flags add explicit stems.
+- `-candidate-file <path>` loads stems from a text file.
+- `-candidate-stdin` loads stems from stdin.
 - `-format text|jsonl` selects a human-readable or machine-readable output mode.
 - `-filter all|absent-in-all` controls which results are emitted.
 - `-out <path>` writes durable output to a file instead of stdout.

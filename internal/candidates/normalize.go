@@ -3,22 +3,27 @@ package candidates
 import (
 	"fmt"
 	"strings"
-
-	"github.com/gene/domain-finder/internal/zonefile"
+	"unicode"
 )
 
-// NormalizeCandidate normalizes and validates a candidate as a full FQDN.
-// Relative labels such as "example" are rejected in this phase.
+// NormalizeCandidate normalizes and validates a candidate as a single-label
+// domain stem. Loaded zones determine which FQDNs are checked.
 func NormalizeCandidate(value string) (string, error) {
-	normalized := zonefile.NormalizeDomain(value)
+	normalized := strings.TrimSpace(strings.ToLower(value))
 	if normalized == "" {
 		return "", fmt.Errorf("candidate %q is empty after normalization", value)
 	}
-	if !strings.Contains(normalized, ".") {
-		return "", fmt.Errorf("candidate %q must be a full domain name", value)
+	if strings.Contains(normalized, ".") {
+		return "", fmt.Errorf("candidate %q must be a single-label stem, not a full domain name", value)
 	}
-	if strings.HasPrefix(normalized, ".") || strings.HasSuffix(normalized, ".") || strings.Contains(normalized, "..") {
-		return "", fmt.Errorf("candidate %q is not a valid full domain name", value)
+	if strings.HasPrefix(normalized, "-") || strings.HasSuffix(normalized, "-") {
+		return "", fmt.Errorf("candidate %q is not a valid stem", value)
+	}
+	for _, r := range normalized {
+		if unicode.IsLower(r) || unicode.IsDigit(r) || r == '-' {
+			continue
+		}
+		return "", fmt.Errorf("candidate %q is not a valid stem", value)
 	}
 	return normalized, nil
 }

@@ -32,11 +32,11 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	forceInteractive := fs.Bool("interactive", false, "force interactive text console")
 	noInteractive := fs.Bool("no-interactive", false, "disable interactive text console")
 	fs.Var(&zones, "zone", "named zone file in the form zone=path (repeatable)")
-	fs.Var(&cliCandidates, "candidate", "full candidate domain name to query (repeatable)")
+	fs.Var(&cliCandidates, "candidate", "candidate stem/label to query across loaded zones (repeatable)")
 
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, "Usage: domainfinder -zone com=path/to/com.zone -candidate example.com [more flags]\n\n")
-		fmt.Fprintf(stderr, "Loads named zone files and performs exact-match lookups using full FQDN candidates.\n")
+		fmt.Fprintf(stderr, "Usage: domainfinder -zone com=path/to/com.zone -candidate example [more flags]\n\n")
+		fmt.Fprintf(stderr, "Loads named zone files and checks candidate stems across all loaded zones.\n")
 		fs.PrintDefaults()
 	}
 

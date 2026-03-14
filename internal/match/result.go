@@ -7,7 +7,7 @@ type ZonePresence struct {
 }
 
 // CandidateResult is the stable per-candidate classification result used by
-// output layers. Candidate is stored in normalized FQDN form.
+// output layers. Candidate is stored in normalized stem form.
 type CandidateResult struct {
 	Candidate    string         `json:"candidate"`
 	Zones        []ZonePresence `json:"zones"`

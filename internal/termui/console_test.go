@@ -12,16 +12,16 @@ import (
 
 func TestConsoleRendersHeaderAndRows(t *testing.T) {
 	var buf bytes.Buffer
-	console := NewConsole(&buf, []string{"com", "net"}, []string{"example.net", "missing.net"})
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"example", "missing"})
 
 	if err := console.Start(2, report.FilterAbsentInAll); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := console.UpdateActive(1, 2, "example.net"); err != nil {
+	if err := console.UpdateActive(1, 2, "example"); err != nil {
 		t.Fatalf("UpdateActive() error = %v", err)
 	}
 	if err := console.EmitRow(match.CandidateResult{
-		Candidate: "missing.net",
+		Candidate: "missing",
 		Zones: []match.ZonePresence{
 			{Zone: "com", Present: false},
 			{Zone: "net", Present: false},
@@ -38,8 +38,8 @@ func TestConsoleRendersHeaderAndRows(t *testing.T) {
 		"Zone files loaded: COM, NET\n",
 		"Searching 2 domains | filter: absent-in-all\n",
 		"candidate",
-		"> [1/2] example.net",
-		"  missing.net",
+		"> [1/2] example",
+		"  missing",
 		"Done: checked 2, emitted 1\n",
 	}
 	for _, fragment := range wantFragments {

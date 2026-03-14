@@ -23,19 +23,19 @@ func TestRunTextWorkflowFallsBackWhenNotInteractive(t *testing.T) {
 	err := Run([]string{
 		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
 		"-zone", "com=" + fixturePath("small", "com.zone"),
-		"-candidate", "example.net",
-		"-candidate", "missing.net",
+		"-candidate", "example",
+		"-candidate", "missing",
 	}, strings.NewReader(""), &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
 	want := "" +
-		"example.net\n" +
+		"example\n" +
 		"  summary: present in at least one loaded zone\n" +
-		"  com: absent\n" +
+		"  com: present\n" +
 		"  net: present\n" +
-		"missing.net\n" +
+		"missing\n" +
 		"  summary: absent in all loaded zones\n" +
 		"  com: absent\n" +
 		"  net: absent\n" +
@@ -60,19 +60,19 @@ func TestRunTextWorkflowInteractiveOverride(t *testing.T) {
 		"-interactive",
 		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
 		"-zone", "com=" + fixturePath("small", "com.zone"),
-		"-candidate", "example.net",
-		"-candidate", "missing.net",
+		"-candidate", "example",
+		"-candidate", "missing",
 	}, strings.NewReader(""), &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
 
 	wantStdout := "" +
-		"example.net\n" +
+		"example\n" +
 		"  summary: present in at least one loaded zone\n" +
-		"  com: absent\n" +
+		"  com: present\n" +
 		"  net: present\n" +
-		"missing.net\n" +
+		"missing\n" +
 		"  summary: absent in all loaded zones\n" +
 		"  com: absent\n" +
 		"  net: absent\n" +
@@ -90,9 +90,9 @@ func TestRunTextWorkflowInteractiveOverride(t *testing.T) {
 		"Zone files loaded: COM, NET\n",
 		"Searching 2 domains | filter: all\n",
 		"candidate",
-		"> [1/2] example.net",
-		"  example.net",
-		"  missing.net",
+		"> [1/2] example",
+		"  example",
+		"  missing",
 		"Done: checked 2, emitted 2\n",
 	}
 	for _, fragment := range wantProgress {
@@ -118,7 +118,7 @@ func TestRunTextWorkflowWithCandidateFileInteractive(t *testing.T) {
 	}
 
 	want := "" +
-		"missing.net\n" +
+		"missing\n" +
 		"  summary: absent in all loaded zones\n" +
 		"  com: absent\n" +
 		"  net: absent\n" +
@@ -135,10 +135,10 @@ func TestRunTextWorkflowWithCandidateFileInteractive(t *testing.T) {
 	progress := stderr.String()
 	wantProgress := []string{
 		"Searching 3 domains | filter: absent-in-all\n",
-		"> [1/3] missing.net",
-		"> [2/3] example.net",
-		"> [3/3] example.com",
-		"  missing.net",
+		"> [1/3] missing",
+		"> [2/3] example",
+		"> [3/3] mixedcase",
+		"  missing",
 		"Done: checked 3, emitted 1\n",
 	}
 	for _, fragment := range wantProgress {
@@ -157,7 +157,7 @@ func TestRunTextWorkflowNoInteractiveOverride(t *testing.T) {
 		"-no-interactive",
 		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
 		"-zone", "com=" + fixturePath("small", "com.zone"),
-		"-candidate", "example.net",
+		"-candidate", "example",
 	}, strings.NewReader(""), &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -179,7 +179,7 @@ func TestRunJSONLWorkflow(t *testing.T) {
 		"-interactive",
 		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
 		"-zone", "com=" + fixturePath("small", "com.zone"),
-		"-candidate", "example.net",
+		"-candidate", "example",
 	}, strings.NewReader(""), &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -189,8 +189,8 @@ func TestRunJSONLWorkflow(t *testing.T) {
 	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &got); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	if got.Candidate != "example.net" || !got.PresentInAny || got.AbsentInAll {
-		t.Fatalf("got = %#v, want present example.net result", got)
+	if got.Candidate != "example" || !got.PresentInAny || got.AbsentInAll {
+		t.Fatalf("got = %#v, want present example result", got)
 	}
 	if len(got.Zones) != 2 || got.Zones[0].Zone != "com" || got.Zones[1].Zone != "net" {
 		t.Fatalf("zones = %#v, want deterministic order", got.Zones)
@@ -214,7 +214,7 @@ func TestRunTextWorkflowToFileInteractive(t *testing.T) {
 		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
 		"-zone", "com=" + fixturePath("small", "com.zone"),
 		"-candidate-file", fixturePath("small", "candidates.txt"),
-	}, strings.NewReader("missing.net\n"), &stdout, &stderr)
+	}, strings.NewReader("missing\n"), &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -227,7 +227,7 @@ func TestRunTextWorkflowToFileInteractive(t *testing.T) {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
 	wantFile := "" +
-		"missing.net\n" +
+		"missing\n" +
 		"  summary: absent in all loaded zones\n" +
 		"  com: absent\n" +
 		"  net: absent\n" +

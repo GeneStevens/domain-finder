@@ -21,11 +21,11 @@ func TestClassifyAcrossMultipleZones(t *testing.T) {
 		t.Fatalf("Register(com) error = %v", err)
 	}
 
-	got := Classify(multi, "EXAMPLE.NET.")
+	got := Classify(multi, "example")
 	want := CandidateResult{
-		Candidate: "example.net",
+		Candidate: "example",
 		Zones: []ZonePresence{
-			{Zone: "com", Present: false},
+			{Zone: "com", Present: true},
 			{Zone: "net", Present: true},
 		},
 		PresentInAny: true,
@@ -44,7 +44,7 @@ func TestClassifyAbsentInAll(t *testing.T) {
 		t.Fatalf("Register(org) error = %v", err)
 	}
 
-	got := Classify(multi, "missing.org")
+	got := Classify(multi, "missing")
 	if got.PresentInAny {
 		t.Fatal("PresentInAny = true, want false")
 	}
@@ -70,18 +70,24 @@ func TestClassifyAllPreservesCandidateOrderAndZoneOrder(t *testing.T) {
 		}
 	}
 
-	got := ClassifyAll(multi, []string{"example.net", "missing.net"})
+	got := ClassifyAll(multi, []string{"example", "missing"})
 	if len(got) != 2 {
 		t.Fatalf("len(ClassifyAll()) = %d, want 2", len(got))
 	}
-	if got[0].Candidate != "example.net" || got[1].Candidate != "missing.net" {
+	if got[0].Candidate != "example" || got[1].Candidate != "missing" {
 		t.Fatalf("candidate order = %#v, want preserved input order", got)
 	}
 	wantZones := []ZonePresence{
-		{Zone: "com", Present: false},
+		{Zone: "com", Present: true},
 		{Zone: "net", Present: true},
 	}
 	if !reflect.DeepEqual(got[0].Zones, wantZones) {
 		t.Fatalf("zones = %#v, want %#v", got[0].Zones, wantZones)
+	}
+}
+
+func TestComposeLookupName(t *testing.T) {
+	if got := ComposeLookupName("example", "net"); got != "example.net" {
+		t.Fatalf("ComposeLookupName() = %q, want %q", got, "example.net")
 	}
 }

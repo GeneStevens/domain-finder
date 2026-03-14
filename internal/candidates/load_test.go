@@ -13,11 +13,11 @@ func fixturePath(parts ...string) string {
 }
 
 func TestLoadCLIOnly(t *testing.T) {
-	got, err := Load(Sources{CLI: []string{"EXAMPLE.NET.", "missing.net"}})
+	got, err := Load(Sources{CLI: []string{"EXAMPLE", "missing"}})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	want := []string{"example.net", "missing.net"}
+	want := []string{"example", "missing"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
 	}
@@ -28,7 +28,7 @@ func TestLoadFileOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	want := []string{"missing.net", "example.net", "example.com"}
+	want := []string{"missing", "example", "mixedcase"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
 	}
@@ -37,12 +37,12 @@ func TestLoadFileOnly(t *testing.T) {
 func TestLoadStdinOnly(t *testing.T) {
 	got, err := Load(Sources{
 		UseStdin: true,
-		Stdin:    strings.NewReader("# comment\n\nEXAMPLE.NET.\nmissing.net\n"),
+		Stdin:    strings.NewReader("# comment\n\nEXAMPLE\nmissing\n"),
 	})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	want := []string{"example.net", "missing.net"}
+	want := []string{"example", "missing"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
 	}
@@ -50,13 +50,13 @@ func TestLoadStdinOnly(t *testing.T) {
 
 func TestLoadCLIMergedWithFileAndDeduped(t *testing.T) {
 	got, err := Load(Sources{
-		CLI:  []string{"EXAMPLE.NET.", "cli-only.com", "example.com"},
+		CLI:  []string{"EXAMPLE", "cli-only", "mixedcase"},
 		File: fixturePath("small", "candidates.txt"),
 	})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	want := []string{"example.net", "cli-only.com", "example.com", "missing.net"}
+	want := []string{"example", "cli-only", "mixedcase", "missing"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
 	}
@@ -66,12 +66,12 @@ func TestLoadFileAndStdinMerged(t *testing.T) {
 	got, err := Load(Sources{
 		File:     fixturePath("small", "candidates.txt"),
 		UseStdin: true,
-		Stdin:    strings.NewReader("stdin-only.net\nEXAMPLE.COM.\n"),
+		Stdin:    strings.NewReader("stdin-only\nMIXEDCASE\n"),
 	})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	want := []string{"missing.net", "example.net", "example.com", "stdin-only.net"}
+	want := []string{"missing", "example", "mixedcase", "stdin-only"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
 	}
@@ -79,30 +79,30 @@ func TestLoadFileAndStdinMerged(t *testing.T) {
 
 func TestLoadAllSourcesMergedAndDeduped(t *testing.T) {
 	got, err := Load(Sources{
-		CLI:      []string{"EXAMPLE.NET.", "cli-only.com"},
+		CLI:      []string{"EXAMPLE", "cli-only"},
 		File:     fixturePath("small", "candidates.txt"),
 		UseStdin: true,
-		Stdin:    strings.NewReader("missing.net\nstdin-only.net\ncli-only.com\n"),
+		Stdin:    strings.NewReader("missing\nstdin-only\ncli-only\n"),
 	})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	want := []string{"example.net", "cli-only.com", "missing.net", "example.com", "stdin-only.net"}
+	want := []string{"example", "cli-only", "missing", "mixedcase", "stdin-only"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
 	}
 }
 
 func TestLoadRejectsInvalidCandidate(t *testing.T) {
-	if _, err := Load(Sources{CLI: []string{"example"}}); err == nil {
-		t.Fatal("Load() error = nil, want error for non-FQDN candidate")
+	if _, err := Load(Sources{CLI: []string{"example.net"}}); err == nil {
+		t.Fatal("Load() error = nil, want error for FQDN candidate")
 	}
 }
 
 func TestLoadRejectsInvalidStdinCandidate(t *testing.T) {
 	if _, err := Load(Sources{
 		UseStdin: true,
-		Stdin:    strings.NewReader("example\n"),
+		Stdin:    strings.NewReader("example.net\n"),
 	}); err == nil {
 		t.Fatal("Load() error = nil, want error for invalid stdin candidate")
 	}

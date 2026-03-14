@@ -13,11 +13,11 @@ func TestWriteJSONL(t *testing.T) {
 	var buf bytes.Buffer
 	results := []match.CandidateResult{
 		{
-			Candidate:    "example.net",
+			Candidate:    "example",
 			PresentInAny: true,
 			AbsentInAll:  false,
 			Zones: []match.ZonePresence{
-				{Zone: "com", Present: false},
+				{Zone: "com", Present: true},
 				{Zone: "net", Present: true},
 			},
 		},
@@ -37,8 +37,8 @@ func TestWriteJSONL(t *testing.T) {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
 
-	if got.Candidate != "example.net" {
-		t.Fatalf("Candidate = %q, want %q", got.Candidate, "example.net")
+	if got.Candidate != "example" {
+		t.Fatalf("Candidate = %q, want %q", got.Candidate, "example")
 	}
 	if len(got.Zones) != 2 || got.Zones[0].Zone != "com" || got.Zones[1].Zone != "net" {
 		t.Fatalf("zones = %#v, want deterministic order", got.Zones)
