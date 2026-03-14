@@ -17,6 +17,8 @@ type consoleImpl interface {
 	ClearActive() error
 	Finish(summary report.Summary) error
 	Note(line string) error
+	Close() error
+	SetInterrupt(func())
 }
 
 // Console renders the interactive terminal UI.
@@ -134,4 +136,20 @@ func (c *Console) Note(line string) error {
 		return nil
 	}
 	return c.impl.Note(line)
+}
+
+// Close shuts down the interactive console and persists any final transcript.
+func (c *Console) Close() error {
+	if c == nil || c.impl == nil {
+		return nil
+	}
+	return c.impl.Close()
+}
+
+// SetInterrupt configures the interrupt handler used by interactive consoles.
+func (c *Console) SetInterrupt(fn func()) {
+	if c == nil || c.impl == nil {
+		return
+	}
+	c.impl.SetInterrupt(fn)
 }

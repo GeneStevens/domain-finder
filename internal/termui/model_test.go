@@ -87,3 +87,38 @@ func TestInteractiveModelRendersFinalSummaries(t *testing.T) {
 		}
 	}
 }
+
+func TestInteractiveModelTranscriptPreservesDurableContent(t *testing.T) {
+	model := newInteractiveModel([]string{"com", "net"}, []string{"strongstem"}, false, false, nil)
+
+	updated, _ := model.Update(rowMsg{result: match.CandidateResult{
+		Candidate:   "strongstem",
+		AbsentInAll: true,
+		Zones: []match.ZonePresence{
+			{Zone: "com", Present: false},
+			{Zone: "net", Present: false},
+		},
+	}})
+	model = updated.(interactiveModel)
+	updated, _ = model.Update(noteMsg{line: "generation diagnostics"})
+	model = updated.(interactiveModel)
+	updated, _ = model.Update(finishMsg{summary: report.Summary{TotalCandidates: 5, EmittedResults: 1, AbsentInAll: 1}})
+	model = updated.(interactiveModel)
+
+	transcript := model.Transcript()
+	for _, fragment := range []string{
+		"stem",
+		"strongstem",
+		"COM NET",
+		"all ✓",
+		"generation diagnostics",
+		"Done: checked 5 | emitted 1 | strong 1",
+	} {
+		if !strings.Contains(transcript, fragment) {
+			t.Fatalf("transcript missing %q:\n%s", fragment, transcript)
+		}
+	}
+	if strings.Contains(transcript, "checking:") || strings.Contains(transcript, "generation: batch") {
+		t.Fatalf("transcript = %q, want only durable content", transcript)
+	}
+}

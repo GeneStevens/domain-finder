@@ -1,8 +1,10 @@
 package termui
 
 import (
+	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,8 +15,11 @@ import (
 type bubbleConsole struct {
 	program *tea.Program
 	model   interactiveModel
+	w       io.Writer
 	runErr  chan error
-	once    sync.Once
+	started bool
+	waited  sync.Once
+	printed sync.Once
 }
 
 func newBubbleConsole(w io.Writer, zones []string, candidates []string, color, hideTaken, showPartials bool) *bubbleConsole {
@@ -22,6 +27,7 @@ func newBubbleConsole(w io.Writer, zones []string, candidates []string, color, h
 	model := newInteractiveModel(zones, candidates, color, showPartials, nil)
 	return &bubbleConsole{
 		model: model,
+		w:     w,
 		program: tea.NewProgram(
 			model,
 			tea.WithInput(os.Stdin),
@@ -35,8 +41,12 @@ func (c *bubbleConsole) Start(total int, filter report.FilterMode) error {
 	if c == nil || c.program == nil {
 		return nil
 	}
+	c.started = true
 	go func() {
-		_, err := c.program.Run()
+		finalModel, err := c.program.Run()
+		if typed, ok := finalModel.(interactiveModel); ok {
+			c.model = typed
+		}
 		c.runErr <- err
 	}()
 	c.program.Send(startMsg{total: total, filter: filter})
@@ -87,7 +97,10 @@ func (c *bubbleConsole) Finish(summary report.Summary) error {
 		return nil
 	}
 	c.program.Send(finishMsg{summary: summary})
-	return c.wait()
+	if err := c.wait(); err != nil {
+		return err
+	}
+	return c.printTranscript()
 }
 
 func (c *bubbleConsole) Note(line string) error {
@@ -98,10 +111,46 @@ func (c *bubbleConsole) Note(line string) error {
 	return nil
 }
 
+func (c *bubbleConsole) Close() error {
+	if c == nil || c.program == nil {
+		return nil
+	}
+	c.program.Quit()
+	if err := c.wait(); err != nil {
+		return err
+	}
+	return c.printTranscript()
+}
+
+func (c *bubbleConsole) SetInterrupt(fn func()) {
+	if c == nil {
+		return
+	}
+	c.model.interrupt = fn
+	if c.program != nil && c.started {
+		c.program.Send(setInterruptMsg{fn: fn})
+	}
+}
+
 func (c *bubbleConsole) wait() error {
 	var err error
-	c.once.Do(func() {
+	c.waited.Do(func() {
 		err = <-c.runErr
+	})
+	return err
+}
+
+func (c *bubbleConsole) printTranscript() error {
+	var err error
+	c.printed.Do(func() {
+		transcript := c.model.Transcript()
+		if strings.TrimSpace(transcript) == "" || c.w == nil {
+			return
+		}
+		if _, err = fmt.Fprintln(c.w); err != nil {
+			return
+		}
+		_, err = fmt.Fprintln(c.w, transcript)
 	})
 	return err
 }

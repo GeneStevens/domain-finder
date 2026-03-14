@@ -138,6 +138,12 @@ func (c *legacyConsole) Note(line string) error {
 	return err
 }
 
+func (c *legacyConsole) Close() error {
+	return nil
+}
+
+func (c *legacyConsole) SetInterrupt(func()) {}
+
 func (c *legacyConsole) redrawLive() error {
 	line := strings.TrimSpace(strings.Join(nonEmpty([]string{c.liveProgress, c.liveChecking}), " | "))
 	if line == "" {

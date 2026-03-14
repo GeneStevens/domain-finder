@@ -327,14 +327,19 @@ func runDeterministicTextMode(ctx context.Context, backendName string, lookup ba
 }
 
 func runInteractiveTextMode(ctx context.Context, backendName string, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, progressWriter io.Writer, color, hideTaken, showPartials bool, auditLogger *audit.Logger) (runOutcome, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	totalPlanned := len(initialCandidates)
 	if generatePrompt != "" {
 		totalPlanned += cfg.Generate.Count
 	}
 	console := termui.NewConsole(progressWriter, lookup.ZoneNames(), initialCandidates, color, hideTaken, showPartials)
+	console.SetInterrupt(cancel)
 	if err := console.Start(totalPlanned, filterMode); err != nil {
 		return runOutcome{}, err
 	}
+	defer console.Close()
 
 	allResults, emittedResults, diagnostics, usageTotals, underfills, stop, err := processCandidates(ctx, lookup, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, func(event progressEvent) error {
 		if err := console.UpdateActive(event.Index, totalPlanned, event.Candidate); err != nil {

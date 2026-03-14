@@ -36,6 +36,10 @@ type finishMsg struct {
 	summary report.Summary
 }
 
+type setInterruptMsg struct {
+	fn func()
+}
+
 type interactiveModel struct {
 	zones        []string
 	color        bool
@@ -108,6 +112,8 @@ func (m interactiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.liveChecking = ""
 		m.done = true
 		return m, tea.Quit
+	case setInterruptMsg:
+		m.interrupt = msg.fn
 	}
 	return m, nil
 }
@@ -130,4 +136,25 @@ func (m interactiveModel) View() string {
 		lines = append(lines, m.summaryLine)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (m interactiveModel) Transcript() string {
+	lines := make([]string, 0, len(m.results)+len(m.notes)+3)
+	if len(m.results) > 0 {
+		lines = append(lines, fmt.Sprintf("%-*s  %-*s  %-*s", m.candWidth, "stem", m.zoneWidth, "available_zones", m.statusWidth, "result"))
+		lines = append(lines, m.results...)
+	}
+	if len(m.notes) > 0 {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, m.notes...)
+	}
+	if m.summaryLine != "" {
+		if len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, m.summaryLine)
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
