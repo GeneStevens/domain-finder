@@ -21,8 +21,8 @@ type Console struct {
 	zoneWidth    int
 	statusWidth  int
 	lastLen      int
-	liveStatus   string
-	liveActive   string
+	liveProgress string
+	liveChecking string
 }
 
 // NewConsole creates a new streaming console.
@@ -118,8 +118,8 @@ func (c *Console) UpdateActive(index, total int, candidate string) error {
 	if c == nil || c.w == nil {
 		return nil
 	}
-	c.liveActive = fmt.Sprintf("checking: %s... [%d/%d]", truncate(candidate, c.candWidth+4), index, total)
-	return c.rewriteLive()
+	c.liveChecking = fmt.Sprintf("checking: %s... [%d/%d]", truncate(candidate, c.candWidth+4), index, total)
+	return c.redrawLive()
 }
 
 // UpdateStatus rewrites the transient generation/search status line in place.
@@ -127,8 +127,8 @@ func (c *Console) UpdateStatus(line string) error {
 	if c == nil || c.w == nil {
 		return nil
 	}
-	c.liveStatus = strings.TrimSpace(line)
-	return c.rewriteLive()
+	c.liveProgress = strings.TrimSpace(line)
+	return c.redrawLive()
 }
 
 // EmitRow writes a durable emitted row to the console.
@@ -136,7 +136,7 @@ func (c *Console) EmitRow(result match.CandidateResult) error {
 	if !c.ShouldEmitRow(result) {
 		return c.ClearActive()
 	}
-	if err := c.ClearActive(); err != nil {
+	if err := c.clearForDurable(false); err != nil {
 		return err
 	}
 	if c == nil || c.w == nil {
@@ -166,19 +166,16 @@ func (c *Console) ShouldEmitRow(result match.CandidateResult) bool {
 
 // ClearActive clears the transient active line.
 func (c *Console) ClearActive() error {
-	if c == nil || c.w == nil || c.lastLen == 0 {
+	if c == nil || c.w == nil {
 		return nil
 	}
-	if _, err := fmt.Fprintf(c.w, "\r%s\r", strings.Repeat(" ", c.lastLen)); err != nil {
-		return err
-	}
-	c.lastLen = 0
-	return nil
+	c.liveChecking = ""
+	return c.redrawLive()
 }
 
 // Finish clears any active line and prints a compact completion line.
 func (c *Console) Finish(summary report.Summary) error {
-	if err := c.ClearActive(); err != nil {
+	if err := c.clearForDurable(true); err != nil {
 		return err
 	}
 	if c == nil || c.w == nil {
@@ -191,7 +188,7 @@ func (c *Console) Finish(summary report.Summary) error {
 // Note writes a durable status line to the console without leaving the active
 // line smeared across the terminal.
 func (c *Console) Note(line string) error {
-	if err := c.ClearActive(); err != nil {
+	if err := c.clearForDurable(true); err != nil {
 		return err
 	}
 	if c == nil || c.w == nil {
@@ -201,15 +198,19 @@ func (c *Console) Note(line string) error {
 	return err
 }
 
-func (c *Console) rewriteLive() error {
-	line := strings.TrimSpace(strings.Join(nonEmpty([]string{c.liveStatus, c.liveActive}), " | "))
+func (c *Console) redrawLive() error {
+	line := c.liveLine()
 	if line == "" {
-		return c.ClearActive()
+		return c.clearLine()
 	}
-	return c.rewrite(line)
+	return c.writeLiveLine(line)
 }
 
-func (c *Console) rewrite(line string) error {
+func (c *Console) liveLine() string {
+	return strings.TrimSpace(strings.Join(nonEmpty([]string{c.liveProgress, c.liveChecking}), " | "))
+}
+
+func (c *Console) writeLiveLine(line string) error {
 	padding := ""
 	if c.lastLen > len(line) {
 		padding = strings.Repeat(" ", c.lastLen-len(line))
@@ -219,6 +220,28 @@ func (c *Console) rewrite(line string) error {
 	}
 	c.lastLen = len(line)
 	return nil
+}
+
+func (c *Console) clearLine() error {
+	if c == nil || c.w == nil || c.lastLen == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintf(c.w, "\r%s\r", strings.Repeat(" ", c.lastLen)); err != nil {
+		return err
+	}
+	c.lastLen = 0
+	return nil
+}
+
+func (c *Console) clearForDurable(resetProgress bool) error {
+	if c == nil || c.w == nil {
+		return nil
+	}
+	c.liveChecking = ""
+	if resetProgress {
+		c.liveProgress = ""
+	}
+	return c.clearLine()
 }
 
 func (c *Console) formatRow(result match.CandidateResult) string {

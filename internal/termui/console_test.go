@@ -265,3 +265,102 @@ func TestConsoleUpdateStatusUsesEphemeralLine(t *testing.T) {
 		t.Fatalf("console output = %q, want status line to stay ephemeral instead of becoming a durable note", got)
 	}
 }
+
+func TestConsoleLiveUpdatesReplaceWholeLine(t *testing.T) {
+	var buf bytes.Buffer
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"vortex"}, false, false, false)
+
+	if err := console.UpdateStatus("generation: batch 1 attempt 1 accepted 0"); err != nil {
+		t.Fatalf("UpdateStatus(first) error = %v", err)
+	}
+	if err := console.UpdateActive(8, 20, "vortex"); err != nil {
+		t.Fatalf("UpdateActive() error = %v", err)
+	}
+	if err := console.UpdateStatus("generation: batch 2 attempt 1 accepted 1"); err != nil {
+		t.Fatalf("UpdateStatus(second) error = %v", err)
+	}
+
+	got := buf.String()
+	if strings.Contains(got, "[8generation:") {
+		t.Fatalf("console output = %q, want canonical redraws instead of concatenated live fragments", got)
+	}
+	want := "\rgeneration: batch 1 attempt 1 accepted 0" +
+		"\rgeneration: batch 1 attempt 1 accepted 0 | checking: vortex... [8/20]" +
+		"\rgeneration: batch 2 attempt 1 accepted 1 | checking: vortex... [8/20]"
+	if got != want {
+		t.Fatalf("console output = %q, want %q", got, want)
+	}
+}
+
+func TestConsoleClearsPaddingWhenLiveLineGetsShorter(t *testing.T) {
+	var buf bytes.Buffer
+	console := NewConsole(&buf, []string{"com"}, []string{"verylongcandidate"}, false, false, false)
+
+	if err := console.UpdateStatus("generation: batch 12 attempt 3 accepted 10, duplicates 4"); err != nil {
+		t.Fatalf("UpdateStatus(long) error = %v", err)
+	}
+	if err := console.UpdateStatus("generation: batch 13"); err != nil {
+		t.Fatalf("UpdateStatus(short) error = %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "\rgeneration: batch 13") {
+		t.Fatalf("console output = %q, want shorter live line rendered", got)
+	}
+	if !strings.Contains(got, "batch 13                                    ") {
+		t.Fatalf("console output = %q, want shorter line padded to clear leftovers", got)
+	}
+}
+
+func TestConsoleDurableOutputClearsLiveLineFirst(t *testing.T) {
+	var buf bytes.Buffer
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"missing"}, false, false, false)
+
+	if err := console.UpdateStatus("generation: batch 1 attempt 1 accepted 1"); err != nil {
+		t.Fatalf("UpdateStatus() error = %v", err)
+	}
+	if err := console.UpdateActive(1, 1, "missing"); err != nil {
+		t.Fatalf("UpdateActive() error = %v", err)
+	}
+	if err := console.EmitRow(match.CandidateResult{
+		Candidate:   "missing",
+		AbsentInAll: true,
+		Zones: []match.ZonePresence{
+			{Zone: "com", Present: false},
+			{Zone: "net", Present: false},
+		},
+	}); err != nil {
+		t.Fatalf("EmitRow() error = %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "... [1/1]\r") {
+		t.Fatalf("console output = %q, want live line cleared after the active render", got)
+	}
+	if !strings.Contains(got, "\rmissing") {
+		t.Fatalf("console output = %q, want live line cleared before durable row", got)
+	}
+	if strings.Contains(got, "checking: missing... [1/1]\nmissing") {
+		t.Fatalf("console output = %q, want durable row separated from live line", got)
+	}
+}
+
+func TestConsoleFinishClearsLiveLineBeforeSummary(t *testing.T) {
+	var buf bytes.Buffer
+	console := NewConsole(&buf, []string{"com"}, []string{"missing"}, false, false, false)
+
+	if err := console.UpdateStatus("generation: batch 1 attempt 1 accepted 1"); err != nil {
+		t.Fatalf("UpdateStatus() error = %v", err)
+	}
+	if err := console.Finish(report.Summary{TotalCandidates: 1, EmittedResults: 1, AbsentInAll: 1}); err != nil {
+		t.Fatalf("Finish() error = %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "accepted 1\r") {
+		t.Fatalf("console output = %q, want active live line before finish clear", got)
+	}
+	if !strings.Contains(got, "\rDone: checked 1 | emitted 1 | strong 1\n") {
+		t.Fatalf("console output = %q, want final summary to follow a cleared live line", got)
+	}
+}
