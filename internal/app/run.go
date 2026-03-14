@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/genestevens/domain-finder/internal/audit"
 	"github.com/genestevens/domain-finder/internal/backend"
 	"github.com/genestevens/domain-finder/internal/candidates"
 	"github.com/genestevens/domain-finder/internal/config"
@@ -46,6 +47,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	format := fs.String("format", "text", "output format: text | jsonl")
 	filterValue := fs.String("filter", "all", "result filter: all | absent-in-all")
 	outPath := fs.String("out", "", "write output to this file instead of stdout")
+	auditLogPath := fs.String("audit-log", "", "write one audit JSONL record per checked stem to this file")
 	pgDSN := fs.String("pg-dsn", "", "PostgreSQL DSN for the postgres backend")
 	candidateFile := fs.String("candidate-file", "", "read candidates from a text file")
 	candidateStdin := fs.Bool("candidate-stdin", false, "read candidates from stdin")
@@ -85,6 +87,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if *generateDryRun && *generateDryRunFormat != "text" && *generateDryRunFormat != "json" {
 		return fmt.Errorf("unsupported -generate-dry-run-format %q: want text or json", *generateDryRunFormat)
 	}
+	if *generateDryRun && strings.TrimSpace(*auditLogPath) != "" {
+		return fmt.Errorf("-audit-log cannot be used with -generate-dry-run")
+	}
 	if len(zones) == 0 && !*generateDryRun {
 		fs.Usage()
 		return fmt.Errorf("at least one -zone flag is required")
@@ -123,6 +128,16 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		}
 		defer file.Close()
 		writer = file
+	}
+
+	var auditLogger *audit.Logger
+	if *auditLogPath != "" {
+		file, err := os.Create(*auditLogPath)
+		if err != nil {
+			return fmt.Errorf("create audit log %q: %w", *auditLogPath, err)
+		}
+		defer file.Close()
+		auditLogger = audit.NewLogger(file)
 	}
 
 	var cfg config.Config
@@ -188,11 +203,13 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 				interactiveWriter = writer
 			}
 			useColor := termui.ShouldUseColor(*forceColor, *noColor, stderr, stderrIsTTY)
-			return runInteractiveTextMode(context.Background(), lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, interactiveWriter, stderr, useColor, *hideInteractiveTaken)
+			return runInteractiveTextMode(context.Background(), *backendName, lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, interactiveWriter, stderr, useColor, *hideInteractiveTaken, auditLogger)
 		}
-		return runDeterministicTextMode(context.Background(), lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, writer, stderr)
+		return runDeterministicTextMode(context.Background(), *backendName, lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, writer, stderr, auditLogger)
 	case "jsonl":
-		allResults, filteredResults, err := processCandidates(context.Background(), lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, nil, nil)
+		allResults, filteredResults, err := processCandidates(context.Background(), lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, nil, nil, func(event progressEvent) error {
+			return writeAuditRecord(auditLogger, *backendName, lookup.ZoneNames(), event.Result, event.ReportEmitted, false)
+		})
 		if err != nil {
 			return err
 		}
@@ -203,8 +220,10 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	}
 }
 
-func runDeterministicTextMode(ctx context.Context, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, statusWriter io.Writer) error {
-	allResults, filteredResults, err := processCandidates(ctx, lookup, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, nil, makeGenerationNotifier(statusWriter))
+func runDeterministicTextMode(ctx context.Context, backendName string, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, statusWriter io.Writer, auditLogger *audit.Logger) error {
+	allResults, filteredResults, err := processCandidates(ctx, lookup, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, nil, makeGenerationNotifier(statusWriter), func(event progressEvent) error {
+		return writeAuditRecord(auditLogger, backendName, lookup.ZoneNames(), event.Result, event.ReportEmitted, false)
+	})
 	if err != nil {
 		return err
 	}
@@ -212,7 +231,7 @@ func runDeterministicTextMode(ctx context.Context, lookup backend.Lookup, initia
 	return output.WriteText(resultWriter, filteredResults, summary)
 }
 
-func runInteractiveTextMode(ctx context.Context, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, progressWriter io.Writer, color, hideTaken bool) error {
+func runInteractiveTextMode(ctx context.Context, backendName string, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, progressWriter io.Writer, color, hideTaken bool, auditLogger *audit.Logger) error {
 	totalPlanned := len(initialCandidates)
 	if generatePrompt != "" {
 		totalPlanned += cfg.Generate.Count
@@ -226,22 +245,22 @@ func runInteractiveTextMode(ctx context.Context, lookup backend.Lookup, initialC
 		if err := console.UpdateActive(event.Index, totalPlanned, event.Candidate); err != nil {
 			return err
 		}
-		if !event.Emitted {
-			return nil
-		}
-		if !console.ShouldEmitRow(event.Result) {
-			return nil
-		}
-		if err := console.EmitRow(event.Result); err != nil {
+		interactiveEmitted := event.ReportEmitted && console.ShouldEmitRow(event.Result)
+		if err := writeAuditRecord(auditLogger, backendName, lookup.ZoneNames(), event.Result, event.ReportEmitted, interactiveEmitted); err != nil {
 			return err
 		}
-		if resultWriter == nil {
+		if interactiveEmitted {
+			if err := console.EmitRow(event.Result); err != nil {
+				return err
+			}
+		}
+		if !event.ReportEmitted || resultWriter == nil {
 			return nil
 		}
 		return output.WriteTextResult(resultWriter, event.Result)
 	}, func(event openai.Event) error {
 		return console.Note(renderGenerationEvent(event))
-	})
+	}, nil)
 	if err != nil {
 		return err
 	}
@@ -257,13 +276,14 @@ func runInteractiveTextMode(ctx context.Context, lookup backend.Lookup, initialC
 }
 
 type progressEvent struct {
-	Index     int
-	Candidate string
-	Result    match.CandidateResult
-	Emitted   bool
+	Index         int
+	Candidate     string
+	Result        match.CandidateResult
+	Emitted       bool
+	ReportEmitted bool
 }
 
-func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, onProgress func(progressEvent) error, onGenerationEvent func(openai.Event) error) ([]match.CandidateResult, []match.CandidateResult, error) {
+func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, onProgress func(progressEvent) error, onGenerationEvent func(openai.Event) error, onAudit func(progressEvent) error) ([]match.CandidateResult, []match.CandidateResult, error) {
 	allResults := make([]match.CandidateResult, 0, len(initialCandidates))
 	emittedResults := make([]match.CandidateResult, 0, len(initialCandidates))
 	processedCount := 0
@@ -280,13 +300,20 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 			if emitted {
 				emittedResults = append(emittedResults, result)
 			}
+			event := progressEvent{
+				Index:         processedCount,
+				Candidate:     candidate,
+				Result:        result,
+				Emitted:       emitted,
+				ReportEmitted: emitted,
+			}
+			if onAudit != nil {
+				if err := onAudit(event); err != nil {
+					return err
+				}
+			}
 			if onProgress != nil {
-				if err := onProgress(progressEvent{
-					Index:     processedCount,
-					Candidate: candidate,
-					Result:    result,
-					Emitted:   emitted,
-				}); err != nil {
+				if err := onProgress(event); err != nil {
 					return err
 				}
 			}
@@ -315,6 +342,13 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 	}
 
 	return allResults, emittedResults, nil
+}
+
+func writeAuditRecord(logger *audit.Logger, backendName string, requestedZones []string, result match.CandidateResult, reportEmitted, interactiveEmitted bool) error {
+	if logger == nil {
+		return nil
+	}
+	return logger.Write(audit.NewRecord(result, backendName, requestedZones, reportEmitted, interactiveEmitted))
 }
 
 func makeGenerationNotifier(w io.Writer) func(openai.Event) error {

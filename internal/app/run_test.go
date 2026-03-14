@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/genestevens/domain-finder/internal/audit"
 	"github.com/genestevens/domain-finder/internal/backend"
 	"github.com/genestevens/domain-finder/internal/config"
 	"github.com/genestevens/domain-finder/internal/match"
@@ -260,6 +261,58 @@ func TestRunTextWorkflowInteractiveCanHideTakenRows(t *testing.T) {
 	}
 }
 
+func TestRunInteractiveAuditLogIncludesSuppressedTakenRows(t *testing.T) {
+	dir := t.TempDir()
+	auditPath := filepath.Join(dir, "run.jsonl")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-interactive",
+		"-interactive-hide-taken",
+		"-audit-log", auditPath,
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-candidate", "example",
+		"-candidate", "missing",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if strings.Contains(stderr.String(), "example  (none)") || strings.Contains(stderr.String(), "taken") {
+		t.Fatalf("stderr = %q, want taken row suppressed from interactive tape", stderr.String())
+	}
+
+	data, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("audit lines = %d, want 2 records", len(lines))
+	}
+
+	var got []audit.Record
+	for _, line := range lines {
+		var record audit.Record
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("json.Unmarshal(%q) error = %v", line, err)
+		}
+		got = append(got, record)
+	}
+
+	if got[0].Stem != "example" || got[0].State != audit.StateTaken || got[0].ReportEmitted != true || got[0].InteractiveEmitted != false {
+		t.Fatalf("got[0] = %#v, want taken record preserved but not interactively emitted", got[0])
+	}
+	if got[1].Stem != "missing" || got[1].State != audit.StateAll || got[1].InteractiveEmitted != true {
+		t.Fatalf("got[1] = %#v, want strong emitted record", got[1])
+	}
+	if !reflect.DeepEqual(got[0].RequestedZones, []string{"com", "net"}) {
+		t.Fatalf("requested_zones = %#v, want [com net]", got[0].RequestedZones)
+	}
+}
+
 func TestRunTextWorkflowWithCandidateFileInteractive(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -373,6 +426,116 @@ func TestRunJSONLWorkflow(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty in jsonl mode", stderr.String())
+	}
+}
+
+func TestRunNonInteractiveAuditLog(t *testing.T) {
+	dir := t.TempDir()
+	auditPath := filepath.Join(dir, "run.jsonl")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-audit-log", auditPath,
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-candidate", "example",
+		"-candidate", "missing",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if !strings.Contains(stdout.String(), "summary\n") {
+		t.Fatalf("stdout = %q, want normal deterministic output", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty fallback stderr", stderr.String())
+	}
+
+	data, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("audit lines = %d, want 2 records", len(lines))
+	}
+	var record audit.Record
+	if err := json.Unmarshal([]byte(lines[0]), &record); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if record.Backend != "file" || record.InteractiveEmitted {
+		t.Fatalf("record = %#v, want file backend and non-interactive emission=false", record)
+	}
+}
+
+func TestRunAuditLogIncludesFilteredOutStem(t *testing.T) {
+	dir := t.TempDir()
+	auditPath := filepath.Join(dir, "run.jsonl")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-interactive",
+		"-filter", "absent-in-all",
+		"-audit-log", auditPath,
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-candidate", "example",
+		"-candidate", "missing",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	data, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("audit lines = %d, want 2 records", len(lines))
+	}
+
+	var example audit.Record
+	var missing audit.Record
+	for _, line := range lines {
+		var record audit.Record
+		if err := json.Unmarshal([]byte(line), &record); err != nil {
+			t.Fatalf("json.Unmarshal(%q) error = %v", line, err)
+		}
+		switch record.Stem {
+		case "example":
+			example = record
+		case "missing":
+			missing = record
+		}
+	}
+
+	if example.Stem != "example" || example.ReportEmitted || example.InteractiveEmitted {
+		t.Fatalf("example record = %#v, want filtered-out stem still logged but not emitted", example)
+	}
+	if missing.Stem != "missing" || !missing.ReportEmitted || !missing.InteractiveEmitted {
+		t.Fatalf("missing record = %#v, want emitted strong hit", missing)
+	}
+	if !strings.Contains(stderr.String(), "missing") || strings.Contains(stderr.String(), "example  (none)") {
+		t.Fatalf("stderr = %q, want only emitted interactive row", stderr.String())
+	}
+}
+
+func TestRunGenerateDryRunRejectsAuditLog(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run([]string{
+		"-generate", "short product stems",
+		"-generate-dry-run",
+		"-audit-log", "run.jsonl",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "-audit-log cannot be used with -generate-dry-run") {
+		t.Fatalf("Run() error = %v, want audit/dry-run validation", err)
 	}
 }
 

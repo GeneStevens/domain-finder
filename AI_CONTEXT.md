@@ -19,6 +19,7 @@ available domains.
 - `internal/openai`: batched OpenAI stem generation
 - `internal/report`: filter modes and summary stats
 - `internal/output`: deterministic durable text and JSONL rendering
+- `internal/audit`: JSONL audit logging for one record per checked stem
 - `internal/termui`: compact interactive stderr table rendering
 - `testdata/small`: tiny deterministic fixtures used by tests
 - `testdata/slices`: reserved for small realistic slices, never giant CZDS files
@@ -115,6 +116,7 @@ available domains.
   - `all`
   - `absent-in-all`
 - `internal/output` owns deterministic fallback/file rendering.
+- `internal/audit` owns durable machine-readable per-stem run logging.
 - `internal/termui` owns the compact streaming interactive table on `stderr`.
 - Interactive console prints:
   - a small startup header
@@ -129,6 +131,7 @@ available domains.
   - optional taken-row suppression for the interactive tape only
   - a compact final completion line
 - Interactive mode keeps the compact human-facing table on `stderr`; deterministic detailed output is preserved for non-interactive mode and `-out` files.
+- Audit logging is separate from both interactive and deterministic output paths, and records all checked stems whether or not they were visibly shown.
 - JSONL bypasses `termui` entirely.
 
 ## Current CLI capabilities
@@ -152,6 +155,7 @@ available domains.
 - `-interactive` forces interactive text console mode.
 - `-no-interactive` forces deterministic fallback text mode.
 - `-interactive-hide-taken` suppresses durable `taken` rows only in interactive mode.
+- `-audit-log <path>` writes one JSONL audit record per checked stem.
 - `-color` / `-no-color` control interactive ANSI styling.
 
 ## Testing rule

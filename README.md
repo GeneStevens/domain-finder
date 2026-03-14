@@ -107,6 +107,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-suffix` prefers stems that end with specific text
 - `-generate-dry-run` prints the fully resolved generation contract and exits before any OpenAI call
 - `-generate-dry-run-format text|json` chooses human-readable or machine-readable inspection output
+- `-audit-log <path>` writes one audit JSONL record per checked stem
 - `generate.max_attempts` bounds how many attempts each batch gets to satisfy its target
 - `generate.retry_count` bounds transient API retries inside one attempt
 - Generated values are treated as stems, not FQDNs
@@ -143,6 +144,26 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - Interactive and text-mode generation runs emit concise stderr status lines showing batch requests, accepted/rejected counts, retries, and completion/failure
 - JSONL mode stays machine-readable and does not emit live generation progress
 
+## Audit log
+
+- `-audit-log <path>` creates or truncates a JSONL file for the run
+- The audit log is separate from:
+  - the interactive stderr tape
+  - deterministic text output
+  - JSONL result output
+- It records every checked stem, including stems that were:
+  - filtered out of the interactive table
+  - suppressed by `-interactive-hide-taken`
+- Each record includes:
+  - `stem`
+  - `backend`
+  - `requested_zones`
+  - per-zone `available` results
+  - `state` (`all`, `partial`, `taken`)
+  - `report_emitted`
+  - `interactive_emitted`
+- This is the durable machine-readable truth of what was checked during the run
+
 ## Interactive vs fallback text mode
 
 - Interactive console is enabled only for `text` mode when `stderr` is a TTY
@@ -178,6 +199,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - compact streaming table on `stderr`
   - no detailed durable result blocks on `stdout`
   - if `-out` is used, the full deterministic report still goes to the file
+  - if `-audit-log` is used, every checked stem is still recorded in JSONL even if the row is not shown on the interactive tape
 - Non-interactive text mode:
   - deterministic text report on `stdout`, or in `-out`
   - no interactive terminal rendering
@@ -247,6 +269,35 @@ go run ./cmd/domain-finder \
   -backend file \
   -interactive \
   -interactive-hide-taken \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -candidate example \
+  -candidate missing
+```
+
+Interactive mode with audit logging:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -backend file \
+  -interactive \
+  -interactive-hide-taken \
+  -audit-log run.jsonl \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -candidate example \
+  -candidate missing
+```
+
+Non-interactive mode with audit logging:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -backend file \
+  -no-interactive \
+  -audit-log run.jsonl \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
   -candidate example \
