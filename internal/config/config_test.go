@@ -8,10 +8,10 @@ import (
 
 func TestLoadPrecedence(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, baseConfigName), []byte("openai:\n  model: base-model\npostgres:\n  dsn: postgres://base\ngenerate:\n  count: 5\n  batch_size: 2\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, baseConfigName), []byte("openai:\n  model: base-model\npostgres:\n  dsn: postgres://base\ngenerate:\n  count: 5\n  batch_size: 2\n  max_length: 8\n  suffix: ix\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, localConfigName), []byte("openai:\n  api_key: local-key\n  model: local-model\ngenerate:\n  count: 7\n  max_attempts: 4\n  retry_count: 1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, localConfigName), []byte("openai:\n  api_key: local-key\n  model: local-model\ngenerate:\n  count: 7\n  max_attempts: 4\n  retry_count: 1\n  max_syllables: 2\n  prefix: neo\n  style: developer tool\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -20,15 +20,20 @@ func TestLoadPrecedence(t *testing.T) {
 		"DOMAINFINDER_OPENAI_MODEL":         "env-model",
 		"DOMAINFINDER_GENERATE_BATCH_SIZE":  "4",
 		"DOMAINFINDER_GENERATE_RETRY_COUNT": "5",
+		"DOMAINFINDER_GENERATE_SUFFIX":      "io",
 	}
 	cfg, err := Load(dir, func(key string) (string, bool) {
 		value, ok := env[key]
 		return value, ok
 	}, CLIOverrides{
-		OpenAIModel:       "cli-model",
-		GenerateCount:     9,
-		GenerateBatchSize: 6,
-		PostgresDSN:       "postgres://cli",
+		OpenAIModel:          "cli-model",
+		GenerateCount:        9,
+		GenerateBatchSize:    6,
+		GenerateMaxLength:    12,
+		GenerateMaxSyllables: 3,
+		GeneratePrefix:       "dev",
+		GenerateStyle:        "invented SaaS",
+		PostgresDSN:          "postgres://cli",
 	})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -51,6 +56,21 @@ func TestLoadPrecedence(t *testing.T) {
 	}
 	if cfg.Generate.RetryCount != 5 {
 		t.Fatalf("Generate.RetryCount = %d, want 5", cfg.Generate.RetryCount)
+	}
+	if cfg.Generate.MaxLength != 12 {
+		t.Fatalf("Generate.MaxLength = %d, want 12", cfg.Generate.MaxLength)
+	}
+	if cfg.Generate.MaxSyllables != 3 {
+		t.Fatalf("Generate.MaxSyllables = %d, want 3", cfg.Generate.MaxSyllables)
+	}
+	if cfg.Generate.Prefix != "dev" {
+		t.Fatalf("Generate.Prefix = %q, want dev", cfg.Generate.Prefix)
+	}
+	if cfg.Generate.Suffix != "io" {
+		t.Fatalf("Generate.Suffix = %q, want io", cfg.Generate.Suffix)
+	}
+	if cfg.Generate.Style != "invented SaaS" {
+		t.Fatalf("Generate.Style = %q, want invented SaaS", cfg.Generate.Style)
 	}
 	if cfg.Postgres.DSN != "postgres://cli" {
 		t.Fatalf("Postgres.DSN = %q, want %q", cfg.Postgres.DSN, "postgres://cli")

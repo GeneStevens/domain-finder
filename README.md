@@ -100,12 +100,24 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-count` sets the total requested stem count
 - `-generate-batch-size` sets the per-request batch size
 - `-generate-model` overrides the configured OpenAI model
+- `-generate-style` adds reusable style guidance such as `invented SaaS` or `developer tool`
+- `-generate-max-length` prefers stems with no more than `N` letters
+- `-generate-max-syllables` prefers shorter, simpler-sounding stems
+- `-generate-prefix` prefers stems that start with specific text
+- `-generate-suffix` prefers stems that end with specific text
 - `generate.max_attempts` bounds how many attempts each batch gets to satisfy its target
 - `generate.retry_count` bounds transient API retries inside one attempt
 - Generated values are treated as stems, not FQDNs
 - Generated batches are normalized and deduped through `internal/candidates`
 - Manual, file, stdin, and generated stems can all be used together
 - Matching still composes `<stem>.<zone>` internally
+
+## Prompt constraints vs validation
+
+- Prompt constraints steer the OpenAI request; they do not guarantee compliance
+- `internal/openai` now owns a dedicated prompt builder for the generation contract
+- Generated values still pass through the normal stem validation and dedupe pipeline
+- Invalid outputs such as FQDNs, spaces, punctuation, duplicates, or empty strings are still rejected after generation
 
 ## Hardened generation behavior
 
@@ -235,12 +247,47 @@ go run ./cmd/domain-finder \
   -generate-batch-size 3
 ```
 
+Constrained generation with prompt builder guidance:
+
+```sh
+export OPENAI_API_KEY=your-key-here
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -backend file \
+  -interactive \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -generate "short product name stems" \
+  -generate-style "developer tool" \
+  -generate-count 8 \
+  -generate-batch-size 4 \
+  -generate-max-length 12 \
+  -generate-max-syllables 3 \
+  -generate-prefix dev \
+  -generate-suffix io
+```
+
 Typical operator feedback during generation:
 
 - `generation: batch 1 attempt 1 requesting 3 stems`
 - `generation: batch 1 attempt 1 accepted 2, invalid 1, duplicates 0, need 1 more`
 - `generation: retrying batch 1 attempt 2 (1/2) after transient error`
 - `generation: complete, accepted 6 stems`
+
+Example generation tuning in YAML:
+
+```yaml
+generate:
+  count: 20
+  batch_size: 10
+  max_attempts: 3
+  retry_count: 2
+  max_length: 12
+  max_syllables: 3
+  prefix: dev
+  suffix: io
+  style: invented SaaS
+```
 
 PostgreSQL backend example:
 

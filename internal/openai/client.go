@@ -17,8 +17,6 @@ import (
 
 const chatCompletionsURL = "https://api.openai.com/v1/chat/completions"
 
-const systemPrompt = "You generate candidate domain stems. Return JSON only. Produce concise single-label stems only, no TLDs, no dots, no spaces, no numbering, no explanations, lowercase preferred."
-
 // StemGenerator produces candidate stem batches.
 type StemGenerator interface {
 	GenerateBatch(ctx context.Context, prompt string, count int) ([]string, error)
@@ -26,10 +24,12 @@ type StemGenerator interface {
 
 // Client is a minimal OpenAI Chat Completions client for batch stem generation.
 type Client struct {
-	APIKey  string
-	Model   string
-	BaseURL string
-	HTTP    *http.Client
+	APIKey   string
+	Model    string
+	BaseURL  string
+	HTTP     *http.Client
+	Builder  PromptBuilder
+	Generate config.GenerateConfig
 }
 
 // NewClient creates a configured client from resolved config.
@@ -38,10 +38,12 @@ func NewClient(cfg config.Config) (*Client, error) {
 		return nil, fmt.Errorf("missing OpenAI API key; set OPENAI_API_KEY or domain-finder.local.yaml")
 	}
 	return &Client{
-		APIKey:  cfg.OpenAI.APIKey,
-		Model:   cfg.OpenAI.Model,
-		BaseURL: chatCompletionsURL,
-		HTTP:    &http.Client{Timeout: 60 * time.Second},
+		APIKey:   cfg.OpenAI.APIKey,
+		Model:    cfg.OpenAI.Model,
+		BaseURL:  chatCompletionsURL,
+		HTTP:     &http.Client{Timeout: 60 * time.Second},
+		Builder:  PromptBuilder{},
+		Generate: cfg.Generate,
 	}, nil
 }
 
@@ -61,7 +63,7 @@ func (c *Client) GenerateBatch(ctx context.Context, prompt string, count int) ([
 		Model: c.Model,
 		Messages: []message{
 			{Role: "system", Content: systemPrompt},
-			{Role: "user", Content: fmt.Sprintf("Generate %d candidate stems as JSON for: %s", count, prompt)},
+			{Role: "user", Content: c.Builder.BuildUserPrompt(NewPromptInput(prompt, c.Generate), count)},
 		},
 		ResponseFormat: responseFormat{
 			Type: "json_schema",

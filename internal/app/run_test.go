@@ -523,6 +523,87 @@ func TestRunTextWorkflowInteractiveWithGeneratedStems(t *testing.T) {
 	}
 }
 
+func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
+	dir := t.TempDir()
+	configBody := "" +
+		"generate:\n" +
+		"  count: 4\n" +
+		"  batch_size: 2\n" +
+		"  max_length: 9\n" +
+		"  max_syllables: 2\n" +
+		"  prefix: neo\n" +
+		"  suffix: ix\n" +
+		"  style: security product\n"
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		responses: []fakeStemResponse{
+			{stems: []string{"shieldr", "trynex"}},
+			{stems: []string{"noviq", "guardio"}},
+			{stems: []string{"secbase"}},
+		},
+	}
+
+	var captured config.GenerateConfig
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(cfg config.Config) (openai.StemGenerator, error) {
+		captured = cfg.Generate
+		return generator, nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-generate", "invented security stems",
+		"-generate-count", "5",
+		"-generate-max-length", "12",
+		"-generate-prefix", "sec",
+		"-generate-style", "invented SaaS",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if captured.Count != 5 {
+		t.Fatalf("captured.Count = %d, want 5", captured.Count)
+	}
+	if captured.BatchSize != 2 {
+		t.Fatalf("captured.BatchSize = %d, want 2 from config", captured.BatchSize)
+	}
+	if captured.MaxLength != 12 {
+		t.Fatalf("captured.MaxLength = %d, want 12 from CLI", captured.MaxLength)
+	}
+	if captured.MaxSyllables != 2 {
+		t.Fatalf("captured.MaxSyllables = %d, want 2 from config", captured.MaxSyllables)
+	}
+	if captured.Prefix != "sec" {
+		t.Fatalf("captured.Prefix = %q, want sec from CLI", captured.Prefix)
+	}
+	if captured.Suffix != "ix" {
+		t.Fatalf("captured.Suffix = %q, want ix from config", captured.Suffix)
+	}
+	if captured.Style != "invented SaaS" {
+		t.Fatalf("captured.Style = %q, want invented SaaS from CLI", captured.Style)
+	}
+	if len(generator.calls) != 3 || generator.calls[0] != 2 || generator.calls[1] != 2 || generator.calls[2] != 1 {
+		t.Fatalf("generator calls = %#v, want [2 2 1]", generator.calls)
+	}
+	if !strings.Contains(stderr.String(), "generation: complete, accepted 5 stems") {
+		t.Fatalf("stderr = %q, want generation completion", stderr.String())
+	}
+}
+
 func TestRunJSONLWorkflowWithGeneratedStems(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 1\n"), 0o644); err != nil {

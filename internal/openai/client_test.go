@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/genestevens/domain-finder/internal/config"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -17,9 +19,11 @@ func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func TestGenerateBatch(t *testing.T) {
 	client := &Client{
-		APIKey:  "test-key",
-		Model:   "gpt-4o-mini",
-		BaseURL: "https://example.invalid/v1/chat/completions",
+		APIKey:   "test-key",
+		Model:    "gpt-4o-mini",
+		BaseURL:  "https://example.invalid/v1/chat/completions",
+		Builder:  PromptBuilder{},
+		Generate: config.GenerateConfig{Style: "developer tool", MaxLength: 12, MaxSyllables: 3, Prefix: "dev", Suffix: "io"},
 		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
 				t.Fatalf("Authorization = %q, want %q", got, "Bearer test-key")
@@ -30,6 +34,11 @@ func TestGenerateBatch(t *testing.T) {
 			}
 			if !strings.Contains(string(body), `"json_schema"`) {
 				t.Fatalf("request body = %s, want structured output request", string(body))
+			}
+			for _, fragment := range []string{"developer tool", "no more than 12 letters", "no more than 3 syllables", "start with `dev`", "end with `io`"} {
+				if !strings.Contains(string(body), fragment) {
+					t.Fatalf("request body missing %q:\n%s", fragment, string(body))
+				}
 			}
 			return &http.Response{
 				StatusCode: http.StatusOK,
@@ -52,6 +61,7 @@ func TestGenerateBatchInvalidTopLevelJSON(t *testing.T) {
 		APIKey:  "test-key",
 		Model:   "gpt-4o-mini",
 		BaseURL: "https://example.invalid/v1/chat/completions",
+		Builder: PromptBuilder{},
 		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
@@ -76,6 +86,7 @@ func TestGenerateBatchSalvagesNoisyOutput(t *testing.T) {
 		APIKey:  "test-key",
 		Model:   "gpt-4o-mini",
 		BaseURL: "https://example.invalid/v1/chat/completions",
+		Builder: PromptBuilder{},
 		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			return &http.Response{
 				StatusCode: http.StatusOK,

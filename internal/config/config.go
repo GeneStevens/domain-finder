@@ -31,6 +31,11 @@ type GenerateConfig struct {
 	BatchSize           int
 	MaxAttemptsPerBatch int
 	RetryCount          int
+	MaxLength           int
+	MaxSyllables        int
+	Suffix              string
+	Prefix              string
+	Style               string
 }
 
 type PostgresConfig struct {
@@ -39,20 +44,30 @@ type PostgresConfig struct {
 
 // CLIOverrides are the CLI-provided config overrides.
 type CLIOverrides struct {
-	OpenAIModel       string
-	GenerateCount     int
-	GenerateBatchSize int
-	PostgresDSN       string
+	OpenAIModel          string
+	GenerateCount        int
+	GenerateBatchSize    int
+	GenerateMaxLength    int
+	GenerateMaxSyllables int
+	GenerateSuffix       string
+	GeneratePrefix       string
+	GenerateStyle        string
+	PostgresDSN          string
 }
 
 type fileConfig struct {
-	OpenAIAPIKey        string
-	OpenAIModel         string
-	GenerateCount       int
-	GenerateBatchSize   int
-	GenerateMaxAttempts int
-	GenerateRetryCount  int
-	PostgresDSN         string
+	OpenAIAPIKey         string
+	OpenAIModel          string
+	GenerateCount        int
+	GenerateBatchSize    int
+	GenerateMaxAttempts  int
+	GenerateRetryCount   int
+	GenerateMaxLength    int
+	GenerateMaxSyllables int
+	GenerateSuffix       string
+	GeneratePrefix       string
+	GenerateStyle        string
+	PostgresDSN          string
 }
 
 // Load resolves configuration using precedence:
@@ -122,6 +137,29 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 		}
 		cfg.Generate.RetryCount = parsed
 	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_MAX_LENGTH"); ok && value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_MAX_LENGTH: %w", err)
+		}
+		cfg.Generate.MaxLength = parsed
+	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_MAX_SYLLABLES"); ok && value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_MAX_SYLLABLES: %w", err)
+		}
+		cfg.Generate.MaxSyllables = parsed
+	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_SUFFIX"); ok && value != "" {
+		cfg.Generate.Suffix = value
+	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_PREFIX"); ok && value != "" {
+		cfg.Generate.Prefix = value
+	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_STYLE"); ok && value != "" {
+		cfg.Generate.Style = value
+	}
 
 	if cli.OpenAIModel != "" {
 		cfg.OpenAI.Model = cli.OpenAIModel
@@ -131,6 +169,21 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	}
 	if cli.GenerateBatchSize > 0 {
 		cfg.Generate.BatchSize = cli.GenerateBatchSize
+	}
+	if cli.GenerateMaxLength > 0 {
+		cfg.Generate.MaxLength = cli.GenerateMaxLength
+	}
+	if cli.GenerateMaxSyllables > 0 {
+		cfg.Generate.MaxSyllables = cli.GenerateMaxSyllables
+	}
+	if cli.GenerateSuffix != "" {
+		cfg.Generate.Suffix = cli.GenerateSuffix
+	}
+	if cli.GeneratePrefix != "" {
+		cfg.Generate.Prefix = cli.GeneratePrefix
+	}
+	if cli.GenerateStyle != "" {
+		cfg.Generate.Style = cli.GenerateStyle
 	}
 	if cli.PostgresDSN != "" {
 		cfg.Postgres.DSN = cli.PostgresDSN
@@ -157,6 +210,21 @@ func applyFileConfig(cfg *Config, fc fileConfig) {
 	}
 	if fc.GenerateRetryCount >= 0 {
 		cfg.Generate.RetryCount = fc.GenerateRetryCount
+	}
+	if fc.GenerateMaxLength > 0 {
+		cfg.Generate.MaxLength = fc.GenerateMaxLength
+	}
+	if fc.GenerateMaxSyllables > 0 {
+		cfg.Generate.MaxSyllables = fc.GenerateMaxSyllables
+	}
+	if fc.GenerateSuffix != "" {
+		cfg.Generate.Suffix = fc.GenerateSuffix
+	}
+	if fc.GeneratePrefix != "" {
+		cfg.Generate.Prefix = fc.GeneratePrefix
+	}
+	if fc.GenerateStyle != "" {
+		cfg.Generate.Style = fc.GenerateStyle
 	}
 	if fc.PostgresDSN != "" {
 		cfg.Postgres.DSN = fc.PostgresDSN
@@ -224,6 +292,24 @@ func loadFile(path string) (fileConfig, error) {
 				return fileConfig{}, fmt.Errorf("parse %s generate.retry_count: %w", path, err)
 			}
 			cfg.GenerateRetryCount = parsed
+		case "generate.max_length":
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return fileConfig{}, fmt.Errorf("parse %s generate.max_length: %w", path, err)
+			}
+			cfg.GenerateMaxLength = parsed
+		case "generate.max_syllables":
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return fileConfig{}, fmt.Errorf("parse %s generate.max_syllables: %w", path, err)
+			}
+			cfg.GenerateMaxSyllables = parsed
+		case "generate.suffix":
+			cfg.GenerateSuffix = value
+		case "generate.prefix":
+			cfg.GeneratePrefix = value
+		case "generate.style":
+			cfg.GenerateStyle = value
 		case "postgres.dsn":
 			cfg.PostgresDSN = value
 		default:

@@ -50,8 +50,13 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	candidateFile := fs.String("candidate-file", "", "read candidates from a text file")
 	candidateStdin := fs.Bool("candidate-stdin", false, "read candidates from stdin")
 	generatePrompt := fs.String("generate", "", "generate candidate stems from this prompt")
+	generateStyle := fs.String("generate-style", "", "style guidance for generation, such as invented SaaS or developer tool")
 	generateCount := fs.Int("generate-count", 0, "total number of stems to generate")
 	generateBatchSize := fs.Int("generate-batch-size", 0, "number of stems requested per generation batch")
+	generateMaxLength := fs.Int("generate-max-length", 0, "preferred maximum letters per generated stem")
+	generateMaxSyllables := fs.Int("generate-max-syllables", 0, "preferred maximum syllables per generated stem")
+	generateSuffix := fs.String("generate-suffix", "", "prefer generated stems ending with this text")
+	generatePrefix := fs.String("generate-prefix", "", "prefer generated stems starting with this text")
 	generateModel := fs.String("generate-model", "", "OpenAI model for stem generation")
 	forceInteractive := fs.Bool("interactive", false, "force interactive text console")
 	noInteractive := fs.Bool("no-interactive", false, "disable interactive text console")
@@ -120,10 +125,15 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			return fmt.Errorf("determine working directory: %w", err)
 		}
 		cfg, err = loadConfig(workingDir, os.LookupEnv, config.CLIOverrides{
-			OpenAIModel:       strings.TrimSpace(*generateModel),
-			GenerateCount:     *generateCount,
-			GenerateBatchSize: *generateBatchSize,
-			PostgresDSN:       strings.TrimSpace(*pgDSN),
+			OpenAIModel:          strings.TrimSpace(*generateModel),
+			GenerateCount:        *generateCount,
+			GenerateBatchSize:    *generateBatchSize,
+			GenerateMaxLength:    *generateMaxLength,
+			GenerateMaxSyllables: *generateMaxSyllables,
+			GenerateSuffix:       strings.TrimSpace(*generateSuffix),
+			GeneratePrefix:       strings.TrimSpace(*generatePrefix),
+			GenerateStyle:        strings.TrimSpace(*generateStyle),
+			PostgresDSN:          strings.TrimSpace(*pgDSN),
 		})
 		if err != nil {
 			return err
