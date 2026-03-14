@@ -12,7 +12,7 @@ import (
 
 func TestConsoleRendersHeaderAndRows(t *testing.T) {
 	var buf bytes.Buffer
-	console := NewConsole(&buf, []string{"com", "net"}, []string{"example", "missing"})
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"example", "missing"}, false)
 
 	if err := console.Start(2, report.FilterAbsentInAll); err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -21,7 +21,8 @@ func TestConsoleRendersHeaderAndRows(t *testing.T) {
 		t.Fatalf("UpdateActive() error = %v", err)
 	}
 	if err := console.EmitRow(match.CandidateResult{
-		Candidate: "missing",
+		Candidate:   "missing",
+		AbsentInAll: true,
 		Zones: []match.ZonePresence{
 			{Zone: "com", Present: false},
 			{Zone: "net", Present: false},
@@ -29,18 +30,21 @@ func TestConsoleRendersHeaderAndRows(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("EmitRow() error = %v", err)
 	}
-	if err := console.Finish(report.Summary{TotalCandidates: 2, EmittedResults: 1}); err != nil {
+	if err := console.Finish(report.Summary{TotalCandidates: 2, EmittedResults: 1, AbsentInAll: 1}); err != nil {
 		t.Fatalf("Finish() error = %v", err)
 	}
 
 	got := buf.String()
 	wantFragments := []string{
 		"Zone files loaded: COM, NET\n",
-		"Searching 2 domains | filter: absent-in-all\n",
-		"candidate",
-		"> [1/2] example",
-		"  missing",
-		"Done: checked 2, emitted 1\n",
+		"Searching 2 stems | filter: absent-in-all\n",
+		"stem",
+		"available",
+		"checking: example... [1/2]",
+		"missing",
+		"COM NET",
+		"✓",
+		"Done: checked 2 | emitted 1 | strong 1\n",
 	}
 	for _, fragment := range wantFragments {
 		if !strings.Contains(got, fragment) {
@@ -59,5 +63,39 @@ func TestShouldUseInteractive(t *testing.T) {
 	}
 	if ShouldUseInteractive("text", true, true, nil, neverTTY) {
 		t.Fatal("ShouldUseInteractive(forceOff) = true, want false")
+	}
+}
+
+func TestShouldUseColor(t *testing.T) {
+	neverTTY := func(io.Writer) bool { return false }
+	if ShouldUseColor(false, false, nil, neverTTY) {
+		t.Fatal("ShouldUseColor(auto non-tty) = true, want false")
+	}
+	if !ShouldUseColor(true, false, nil, neverTTY) {
+		t.Fatal("ShouldUseColor(forceOn) = false, want true")
+	}
+	if ShouldUseColor(true, true, nil, neverTTY) {
+		t.Fatal("ShouldUseColor(forceOff) = true, want false")
+	}
+}
+
+func TestConsoleStylesStrongHitsWhenEnabled(t *testing.T) {
+	var buf bytes.Buffer
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"missing"}, true)
+
+	if err := console.EmitRow(match.CandidateResult{
+		Candidate:   "missing",
+		AbsentInAll: true,
+		Zones: []match.ZonePresence{
+			{Zone: "com", Present: false},
+			{Zone: "net", Present: false},
+		},
+	}); err != nil {
+		t.Fatalf("EmitRow() error = %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "missing") || !strings.Contains(got, "\x1b[1;97;42m✓\x1b[0m") {
+		t.Fatalf("styled row = %q, want ANSI strong-hit emphasis", got)
 	}
 }

@@ -14,22 +14,30 @@ import (
 type Console struct {
 	w         io.Writer
 	zones     []string
+	color     bool
 	candWidth int
+	zoneWidth int
 	lastLen   int
 }
 
 // NewConsole creates a new streaming console.
-func NewConsole(w io.Writer, zones []string, candidates []string) *Console {
-	width := len("candidate")
+func NewConsole(w io.Writer, zones []string, candidates []string, color bool) *Console {
+	width := len("stem")
 	for _, candidate := range candidates {
 		if len(candidate) > width {
 			width = len(candidate)
 		}
 	}
+	zoneWidth := len("available")
+	if joined := strings.Join(upperZones(zones), " "); len(joined) > zoneWidth {
+		zoneWidth = len(joined)
+	}
 	return &Console{
 		w:         w,
 		zones:     zones,
+		color:     color,
 		candWidth: width,
+		zoneWidth: zoneWidth,
 	}
 }
 
@@ -57,6 +65,17 @@ func ShouldUseInteractive(format string, forceOn, forceOff bool, stderr io.Write
 	return isTTY(stderr)
 }
 
+// ShouldUseColor decides whether interactive ANSI styling should be enabled.
+func ShouldUseColor(forceOn, forceOff bool, stderr io.Writer, isTTY func(io.Writer) bool) bool {
+	if forceOff {
+		return false
+	}
+	if forceOn {
+		return true
+	}
+	return isTTY(stderr)
+}
+
 // Start prints the compact interactive header and table header.
 func (c *Console) Start(total int, filter report.FilterMode) error {
 	if c == nil || c.w == nil {
@@ -65,10 +84,13 @@ func (c *Console) Start(total int, filter report.FilterMode) error {
 	if _, err := fmt.Fprintf(c.w, "Zone files loaded: %s\n", strings.Join(upperZones(c.zones), ", ")); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(c.w, "Searching %d domains | filter: %s\n", total, filter); err != nil {
+	if _, err := fmt.Fprintf(c.w, "Searching %d stems | filter: %s\n", total, filter); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(c.w, "%-*s  %s\n", c.candWidth, "candidate", c.zoneHeader()); err != nil {
+	if _, err := fmt.Fprintln(c.w); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(c.w, "%-*s  %-*s  %s\n", c.candWidth, "stem", c.zoneWidth, "available", "hit"); err != nil {
 		return err
 	}
 	return nil
@@ -79,7 +101,7 @@ func (c *Console) UpdateActive(index, total int, candidate string) error {
 	if c == nil || c.w == nil {
 		return nil
 	}
-	line := fmt.Sprintf("> [%d/%d] %-*s  %s  checking", index, total, c.candWidth, candidate, c.placeholderCells())
+	line := fmt.Sprintf("checking: %s... [%d/%d]", truncate(candidate, c.candWidth+4), index, total)
 	return c.rewrite(line)
 }
 
@@ -115,7 +137,7 @@ func (c *Console) Finish(summary report.Summary) error {
 	if c == nil || c.w == nil {
 		return nil
 	}
-	_, err := fmt.Fprintf(c.w, "Done: checked %d, emitted %d\n", summary.TotalCandidates, summary.EmittedResults)
+	_, err := fmt.Fprintf(c.w, "Done: checked %d | emitted %d | strong %d\n", summary.TotalCandidates, summary.EmittedResults, summary.AbsentInAll)
 	return err
 }
 
@@ -144,32 +166,22 @@ func (c *Console) rewrite(line string) error {
 	return nil
 }
 
-func (c *Console) zoneHeader() string {
-	parts := make([]string, 0, len(c.zones))
-	for _, zone := range c.zones {
-		parts = append(parts, fmt.Sprintf("%-*s", cellWidth(zone), strings.ToUpper(zone)))
-	}
-	return strings.Join(parts, " ")
-}
-
-func (c *Console) placeholderCells() string {
-	parts := make([]string, 0, len(c.zones))
-	for _, zone := range c.zones {
-		parts = append(parts, fmt.Sprintf("%-*s", cellWidth(zone), "..."))
-	}
-	return strings.Join(parts, " ")
-}
-
 func (c *Console) formatRow(result match.CandidateResult) string {
-	parts := make([]string, 0, len(result.Zones))
+	available := make([]string, 0, len(result.Zones))
 	for _, zone := range result.Zones {
-		value := "-"
-		if zone.Present {
-			value = "hit"
+		if !zone.Present {
+			available = append(available, strings.ToUpper(zone.Zone))
 		}
-		parts = append(parts, fmt.Sprintf("%-*s", cellWidth(zone.Zone), value))
 	}
-	return fmt.Sprintf("  %-*s  %s", c.candWidth, result.Candidate, strings.Join(parts, " "))
+	availableText := "-"
+	if len(available) > 0 {
+		availableText = strings.Join(available, " ")
+	}
+	marker := ""
+	if result.AbsentInAll {
+		marker = c.styleStrong("✓")
+	}
+	return fmt.Sprintf("%-*s  %-*s  %s", c.candWidth, result.Candidate, c.zoneWidth, availableText, marker)
 }
 
 func upperZones(zones []string) []string {
@@ -180,10 +192,19 @@ func upperZones(zones []string) []string {
 	return parts
 }
 
-func cellWidth(zone string) int {
-	width := len(zone)
-	if width < 3 {
-		width = 3
+func truncate(value string, width int) string {
+	if len(value) <= width {
+		return value
 	}
-	return width
+	if width <= 1 {
+		return value[:width]
+	}
+	return value[:width-1]
+}
+
+func (c *Console) styleStrong(value string) string {
+	if !c.color {
+		return value
+	}
+	return "\x1b[1;97;42m" + value + "\x1b[0m"
 }

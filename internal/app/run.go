@@ -55,6 +55,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	generateModel := fs.String("generate-model", "", "OpenAI model for stem generation")
 	forceInteractive := fs.Bool("interactive", false, "force interactive text console")
 	noInteractive := fs.Bool("no-interactive", false, "disable interactive text console")
+	forceColor := fs.Bool("color", false, "force ANSI color/styling in interactive mode")
+	noColor := fs.Bool("no-color", false, "disable ANSI color/styling in interactive mode")
 	fs.Var(&zones, "zone", "zone input: file backend uses zone=path, postgres backend uses zone name (repeatable)")
 	fs.Var(&cliCandidates, "candidate", "candidate stem/label to query across loaded zones (repeatable)")
 
@@ -144,7 +146,12 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	switch *format {
 	case "text":
 		if termui.ShouldUseInteractive(*format, *forceInteractive, *noInteractive, stderr, stderrIsTTY) {
-			return runInteractiveTextMode(context.Background(), lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, writer, stderr)
+			interactiveWriter := io.Writer(nil)
+			if *outPath != "" {
+				interactiveWriter = writer
+			}
+			useColor := termui.ShouldUseColor(*forceColor, *noColor, stderr, stderrIsTTY)
+			return runInteractiveTextMode(context.Background(), lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, interactiveWriter, stderr, useColor)
 		}
 		return runDeterministicTextMode(context.Background(), lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, writer, stderr)
 	case "jsonl":
@@ -168,12 +175,12 @@ func runDeterministicTextMode(ctx context.Context, lookup backend.Lookup, initia
 	return output.WriteText(resultWriter, filteredResults, summary)
 }
 
-func runInteractiveTextMode(ctx context.Context, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, progressWriter io.Writer) error {
+func runInteractiveTextMode(ctx context.Context, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, progressWriter io.Writer, color bool) error {
 	totalPlanned := len(initialCandidates)
 	if generatePrompt != "" {
 		totalPlanned += cfg.Generate.Count
 	}
-	console := termui.NewConsole(progressWriter, lookup.ZoneNames(), initialCandidates)
+	console := termui.NewConsole(progressWriter, lookup.ZoneNames(), initialCandidates, color)
 	if err := console.Start(totalPlanned, filterMode); err != nil {
 		return err
 	}
@@ -188,6 +195,9 @@ func runInteractiveTextMode(ctx context.Context, lookup backend.Lookup, initialC
 		if err := console.EmitRow(event.Result); err != nil {
 			return err
 		}
+		if resultWriter == nil {
+			return nil
+		}
 		return output.WriteTextResult(resultWriter, event.Result)
 	}, func(event openai.Event) error {
 		return console.Note(renderGenerationEvent(event))
@@ -199,6 +209,9 @@ func runInteractiveTextMode(ctx context.Context, lookup backend.Lookup, initialC
 	summary := report.Summarize(allResults, emittedResults)
 	if err := console.Finish(summary); err != nil {
 		return err
+	}
+	if resultWriter == nil {
+		return nil
 	}
 	return output.WriteTextSummary(resultWriter, summary)
 }

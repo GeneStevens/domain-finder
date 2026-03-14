@@ -19,7 +19,7 @@ available domains.
 - `internal/openai`: batched OpenAI stem generation
 - `internal/report`: filter modes and summary stats
 - `internal/output`: deterministic durable text and JSONL rendering
-- `internal/termui`: interactive stderr console rendering
+- `internal/termui`: compact interactive stderr table rendering
 - `testdata/small`: tiny deterministic fixtures used by tests
 - `testdata/slices`: reserved for small realistic slices, never giant CZDS files
 
@@ -109,13 +109,14 @@ available domains.
   - `all`
   - `absent-in-all`
 - `internal/output` owns deterministic fallback/file rendering.
-- `internal/termui` owns the streaming interactive console on `stderr`.
+- `internal/termui` owns the compact streaming interactive table on `stderr`.
 - Interactive console prints:
   - a small startup header
-  - a reusable active stem line
-  - durable scrolling emitted stem rows
+  - a reusable `checking:` stem line
+  - one-line durable emitted stem rows
+  - optional ANSI emphasis for strongest all-zone hits
   - a compact final completion line
-- Durable results still go to `stdout` or `-out`.
+- Interactive mode keeps the compact human-facing table on `stderr`; deterministic detailed output is preserved for non-interactive mode and `-out` files.
 - JSONL bypasses `termui` entirely.
 
 ## Current CLI capabilities
@@ -135,6 +136,7 @@ available domains.
 - `-out <path>` writes durable output to a file instead of stdout.
 - `-interactive` forces interactive text console mode.
 - `-no-interactive` forces deterministic fallback text mode.
+- `-color` / `-no-color` control interactive ANSI styling.
 
 ## Testing rule
 

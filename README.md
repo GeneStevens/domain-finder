@@ -18,7 +18,7 @@ The repository currently uses stem-based matching across loaded zones:
 - `internal/openai` for batch stem generation through the OpenAI API
 - `internal/report` for filtering and summary statistics
 - `internal/output` for deterministic durable text and JSONL rendering
-- `internal/termui` for lightweight interactive terminal rendering on `stderr`
+- `internal/termui` for compact interactive table rendering on `stderr`
 - a CLI workflow that loads named zones, ingests stems from flags, files,
   and/or stdin, composes `<stem>.<zone>` internally, and reports per-zone
   presence or absence for each stem
@@ -124,20 +124,25 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - Interactive console is enabled only for `text` mode when `stderr` is a TTY
 - `-interactive` forces the interactive console on
 - `-no-interactive` forces the deterministic fallback report path
+- `-color` forces ANSI styling in interactive mode
+- `-no-color` disables ANSI styling in interactive mode
 - `jsonl` mode never uses the interactive console
 
 ## Interactive console behavior
 
 - Prints a small startup header showing loaded zones, candidate count, and filter
-- Shows one reusable active stem line while checking
-- Prints durable scrolling rows only for emitted stems
+- Shows one reusable ephemeral `checking: ...` line while checking
+- Prints exactly one durable line per emitted stem
+- Uses a compact table layout tuned for scanability
+- Highlights strongest all-zone hits with a success marker and optional ANSI styling
 - Clears the active line cleanly on completion and prints a compact final status
 
 ## stdout / stderr / file behavior
 
 - Interactive text mode:
-  - streaming console on `stderr`
-  - durable emitted stem results and summary still go to `stdout`, or to `-out`
+  - compact streaming table on `stderr`
+  - no detailed durable result blocks on `stdout`
+  - if `-out` is used, the full deterministic report still goes to the file
 - Non-interactive text mode:
   - deterministic text report on `stdout`, or in `-out`
   - no interactive terminal rendering
@@ -196,6 +201,20 @@ go run ./cmd/domain-finder \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
   -candidate example \
+  -candidate missing
+```
+
+Interactive console with strong-hit styling:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -backend file \
+  -interactive \
+  -color \
+  -filter absent-in-all \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
   -candidate missing
 ```
 

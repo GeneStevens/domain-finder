@@ -194,33 +194,22 @@ func TestRunTextWorkflowInteractiveOverride(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	wantStdout := "" +
-		"example\n" +
-		"  summary: present in at least one loaded zone\n" +
-		"  com: present\n" +
-		"  net: present\n" +
-		"missing\n" +
-		"  summary: absent in all loaded zones\n" +
-		"  com: absent\n" +
-		"  net: absent\n" +
-		"summary\n" +
-		"  total_candidates: 2\n" +
-		"  emitted_results: 2\n" +
-		"  present_in_any: 1\n" +
-		"  absent_in_all: 1\n"
-	if stdout.String() != wantStdout {
-		t.Fatalf("stdout = %q, want %q", stdout.String(), wantStdout)
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty interactive stdout without -out", stdout.String())
 	}
 
 	progress := stderr.String()
 	wantProgress := []string{
 		"Zone files loaded: COM, NET\n",
-		"Searching 2 domains | filter: all\n",
-		"candidate",
-		"> [1/2] example",
-		"  example",
-		"  missing",
-		"Done: checked 2, emitted 2\n",
+		"Searching 2 stems | filter: all\n",
+		"checking: example... [1/2]",
+		"checking: missing... [2/2]",
+		"example",
+		"NET",
+		"missing",
+		"COM NET",
+		"✓",
+		"Done: checked 2 | emitted 2 | strong 1\n",
 	}
 	for _, fragment := range wantProgress {
 		if !strings.Contains(progress, fragment) {
@@ -245,28 +234,21 @@ func TestRunTextWorkflowWithCandidateFileInteractive(t *testing.T) {
 	}
 
 	want := "" +
-		"missing\n" +
-		"  summary: absent in all loaded zones\n" +
-		"  com: absent\n" +
-		"  net: absent\n" +
-		"summary\n" +
-		"  total_candidates: 3\n" +
-		"  emitted_results: 1\n" +
-		"  present_in_any: 2\n" +
-		"  absent_in_all: 1\n" +
-		"  filtered_out: 2\n"
+		""
 	if stdout.String() != want {
-		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
+		t.Fatalf("stdout = %q, want empty interactive stdout", stdout.String())
 	}
 
 	progress := stderr.String()
 	wantProgress := []string{
-		"Searching 3 domains | filter: absent-in-all\n",
-		"> [1/3] missing",
-		"> [2/3] example",
-		"> [3/3] mixedcase",
-		"  missing",
-		"Done: checked 3, emitted 1\n",
+		"Searching 3 stems | filter: absent-in-all\n",
+		"checking: missing... [1/3]",
+		"checking: example... [2/3]",
+		"checking: mixedcase... [3/3]",
+		"missing",
+		"COM NET",
+		"✓",
+		"Done: checked 3 | emitted 1 | strong 1\n",
 	}
 	for _, fragment := range wantProgress {
 		if !strings.Contains(progress, fragment) {
@@ -294,6 +276,29 @@ func TestRunTextWorkflowNoInteractiveOverride(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "summary\n") {
 		t.Fatalf("stdout = %q, want deterministic text report", stdout.String())
+	}
+}
+
+func TestRunInteractiveColorOverride(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run([]string{
+		"-interactive",
+		"-color",
+		"-filter", "absent-in-all",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-candidate", "missing",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty interactive stdout", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "missing") || !strings.Contains(stderr.String(), "\x1b[1;97;42m✓\x1b[0m") {
+		t.Fatalf("stderr = %q, want ANSI strong-hit styling", stderr.String())
 	}
 }
 
@@ -367,7 +372,7 @@ func TestRunTextWorkflowToFileInteractive(t *testing.T) {
 	if string(data) != wantFile {
 		t.Fatalf("file output = %q, want %q", string(data), wantFile)
 	}
-	if !strings.Contains(stderr.String(), "Done: checked 3, emitted 1\n") {
+	if !strings.Contains(stderr.String(), "Done: checked 3 | emitted 1 | strong 1\n") {
 		t.Fatalf("stderr = %q, want interactive completion", stderr.String())
 	}
 }
@@ -490,45 +495,26 @@ func TestRunTextWorkflowInteractiveWithGeneratedStems(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	wantStdout := "" +
-		"missing\n" +
-		"  summary: absent in all loaded zones\n" +
-		"  com: absent\n" +
-		"  net: absent\n" +
-		"brandfoo\n" +
-		"  summary: absent in all loaded zones\n" +
-		"  com: absent\n" +
-		"  net: absent\n" +
-		"noviq\n" +
-		"  summary: absent in all loaded zones\n" +
-		"  com: absent\n" +
-		"  net: absent\n" +
-		"summary\n" +
-		"  total_candidates: 4\n" +
-		"  emitted_results: 3\n" +
-		"  present_in_any: 1\n" +
-		"  absent_in_all: 3\n" +
-		"  filtered_out: 1\n"
-	if stdout.String() != wantStdout {
-		t.Fatalf("stdout = %q, want %q", stdout.String(), wantStdout)
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty interactive stdout without -out", stdout.String())
 	}
 
 	progress := stderr.String()
 	wantProgress := []string{
-		"Searching 4 domains | filter: absent-in-all\n",
+		"Searching 4 stems | filter: absent-in-all\n",
 		"generation: batch 1 attempt 1 requesting 2 stems",
 		"generation: batch 1 attempt 1 accepted 2, invalid 0, duplicates 0, need 0 more",
 		"generation: batch 2 attempt 1 requesting 1 stems",
 		"generation: batch 2 attempt 1 accepted 1, invalid 0, duplicates 0, need 0 more",
 		"generation: complete, accepted 3 stems",
-		"> [1/4] missing",
-		"> [2/4] brandfoo",
-		"> [3/4] example",
-		"> [4/4] noviq",
-		"  missing",
-		"  brandfoo",
-		"  noviq",
-		"Done: checked 4, emitted 3\n",
+		"checking: missing... [1/4]",
+		"checking: brandfoo... [2/4]",
+		"checking: example... [3/4]",
+		"checking: noviq... [4/4]",
+		"missing",
+		"brandfoo",
+		"noviq",
+		"Done: checked 4 | emitted 3 | strong 3\n",
 	}
 	for _, fragment := range wantProgress {
 		if !strings.Contains(progress, fragment) {
