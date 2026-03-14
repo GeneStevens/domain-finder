@@ -15,7 +15,8 @@ available domains.
 - `internal/candidates`: candidate loading, normalization, merge, and dedupe
 - `internal/match`: stable candidate result model and classification
 - `internal/report`: filter modes and summary stats
-- `internal/output`: text and JSONL rendering
+- `internal/output`: text and JSONL durable rendering
+- `internal/termui`: transient stderr activity-line rendering
 - `testdata/small`: tiny deterministic fixtures used by tests
 - `testdata/slices`: reserved for small realistic slices, never giant CZDS files
 
@@ -53,15 +54,17 @@ available domains.
 - `present_in_any`: true if found in at least one loaded zone
 - `absent_in_all`: true if not found in any loaded zone
 
-## Report and output layers
+## Report, output, and terminal UX layers
 
 - Report filters:
   - `all`
   - `absent-in-all`
-- Text output renders a deterministic summary block plus deterministic per-zone
-  candidate statuses.
+- Durable text output renders emitted results first, then a deterministic summary.
 - JSONL output emits one stable JSON object per emitted candidate result.
 - Summary is intentionally text-only and is omitted from JSONL output.
+- `internal/termui` renders a single reusable transient activity line on `stderr`.
+- Text mode uses live stderr progress; JSONL mode disables it completely.
+- Durable results always remain on `stdout` or the configured `-out` file.
 
 ## Current CLI capabilities
 
@@ -71,7 +74,7 @@ available domains.
 - `-candidate-stdin` loads candidates from stdin.
 - `-format text|jsonl` selects a human-readable or machine-readable output mode.
 - `-filter all|absent-in-all` controls which results are emitted.
-- `-out <path>` writes output to a file instead of stdout.
+- `-out <path>` writes durable output to a file instead of stdout.
 
 ## Testing rule
 
@@ -87,7 +90,8 @@ fixtures or tiny realistic slices under `testdata/`.
 ## Deferred work
 
 - No concurrency yet.
-- No advanced terminal UI.
+- No full-screen TUI.
+- No advanced terminal UI beyond a single stderr activity line.
 - No registrar checks or probabilistic availability logic.
 - No filename-based zone inference.
 - No large-file optimization beyond streaming reads.

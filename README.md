@@ -5,7 +5,7 @@ building toward high-scale domain availability checks.
 
 ## Current status
 
-The repository currently provides the Phase 3b exact-match reporting foundation:
+The repository currently provides the first terminal-progress text UX layer:
 
 - a thin CLI entrypoint at `cmd/domainfinder`
 - `internal/zonefile` for opening files and detecting gzip by content
@@ -15,9 +15,10 @@ The repository currently provides the Phase 3b exact-match reporting foundation:
 - `internal/match` for stable per-candidate classification results
 - `internal/report` for filtering and summary statistics
 - `internal/output` for text and JSON Lines rendering
-- a minimal CLI workflow that loads named zones, ingests candidates from flags,
-  candidate files, and/or stdin, classifies candidates, applies report policy,
-  and writes either to stdout or to a file
+- `internal/termui` for lightweight transient activity rendering on stderr
+- a CLI workflow that loads named zones, ingests candidates from flags, files,
+  and/or stdin, classifies candidates, applies report policy, and writes
+  durable results either to stdout or to a file
 - tiny fixture-based tests under `testdata/` for both plain and gzip inputs
 
 Tests intentionally use small deterministic fixtures. They do not depend on
@@ -47,53 +48,77 @@ full `.com` or `.net` CZDS zone files.
 - Candidates are normalized and deduplicated while preserving first-seen order
 - Invalid candidates are rejected with a clear error
 
+## Live text-mode progress
+
+- Text mode now shows a transient reusable activity line on `stderr`
+- The activity line reports candidate index, candidate name, and whether it was
+  emitted or skipped by the current filter
+- Durable emitted text results are still written to `stdout`, or to `-out` if
+  specified
+- JSONL mode disables live progress entirely so machine-readable output stays
+  clean
+
+## stdout vs stderr behavior
+
+- Text mode without `-out`:
+  - transient progress on `stderr`
+  - durable emitted results and summary on `stdout`
+- Text mode with `-out`:
+  - transient progress on `stderr`
+  - durable emitted results and summary in the output file
+- JSONL mode:
+  - durable JSONL records on `stdout` or in the output file
+  - no live progress on `stderr`
+
 ## CLI examples
 
-Stdin only:
+Text mode with live progress:
 
 ```sh
-printf '# comment\nmissing.net\nEXAMPLE.NET.\n' | \
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domainfinder \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -candidate example.net \
+  -candidate missing.net
+```
+
+Text mode with `-filter absent-in-all`:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domainfinder \
+  -filter absent-in-all \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -candidate-file testdata/small/candidates.txt
+```
+
+Text mode with `-out`:
+
+```sh
+printf 'missing.net\n' | \
+env GOCACHE=/tmp/domain-finder-gocache \
 go run ./cmd/domainfinder \
   -candidate-stdin \
   -filter absent-in-all \
-  -zone com=testdata/small/com.zone \
-  -zone net=testdata/small/net.zone.slice
-```
-
-CLI plus stdin:
-
-```sh
-printf 'missing.net\nstdin-only.net\n' | \
-go run ./cmd/domainfinder \
-  -candidate-stdin \
-  -zone com=testdata/small/com.zone \
-  -zone net=testdata/small/net.zone.slice \
-  -candidate EXAMPLE.NET. \
-  -candidate cli-only.com
-```
-
-Candidate file plus stdin:
-
-```sh
-printf 'stdin-only.net\nexample.com\n' | \
-go run ./cmd/domainfinder \
-  -candidate-stdin \
+  -out results.txt \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
   -candidate-file testdata/small/candidates.txt
 ```
 
-CLI plus candidate file plus stdin:
+JSONL mode with no live progress:
 
 ```sh
-printf 'missing.net\nstdin-only.net\ncli-only.com\n' | \
+env GOCACHE=/tmp/domain-finder-gocache \
 go run ./cmd/domainfinder \
-  -candidate-stdin \
+  -format jsonl \
+  -filter absent-in-all \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
-  -candidate EXAMPLE.NET. \
-  -candidate cli-only.com \
-  -candidate-file testdata/small/candidates.txt
+  -candidate missing.net \
+  -candidate example.net
 ```
 
 ## Filter modes
@@ -103,7 +128,7 @@ go run ./cmd/domainfinder \
 
 ## Output behavior
 
-- `text`: human-readable candidate summaries plus a deterministic summary block
+- `text`: durable per-candidate text results followed by a deterministic summary
 - `jsonl`: one JSON object per emitted candidate with fields `candidate`,
   `zones`, `present_in_any`, and `absent_in_all`
 - Summary output is text-only; JSONL intentionally omits summary records to stay

@@ -31,11 +31,6 @@ func TestRunTextWorkflow(t *testing.T) {
 	}
 
 	want := "" +
-		"summary\n" +
-		"  total_candidates: 2\n" +
-		"  emitted_results: 2\n" +
-		"  present_in_any: 1\n" +
-		"  absent_in_all: 1\n" +
 		"example.net\n" +
 		"  summary: present in at least one loaded zone\n" +
 		"  com: absent\n" +
@@ -43,12 +38,26 @@ func TestRunTextWorkflow(t *testing.T) {
 		"missing.net\n" +
 		"  summary: absent in all loaded zones\n" +
 		"  com: absent\n" +
-		"  net: absent\n"
+		"  net: absent\n" +
+		"summary\n" +
+		"  total_candidates: 2\n" +
+		"  emitted_results: 2\n" +
+		"  present_in_any: 1\n" +
+		"  absent_in_all: 1\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", stderr.String())
+
+	progress := stderr.String()
+	wantProgress := []string{
+		"[1/2] example.net emitted",
+		"[2/2] missing.net emitted",
+		"checked 2 candidate(s), emitted 2\n",
+	}
+	for _, fragment := range wantProgress {
+		if !strings.Contains(progress, fragment) {
+			t.Fatalf("stderr missing %q:\n%s", fragment, progress)
+		}
 	}
 }
 
@@ -67,21 +76,31 @@ func TestRunTextWorkflowWithCandidateFile(t *testing.T) {
 	}
 
 	want := "" +
+		"missing.net\n" +
+		"  summary: absent in all loaded zones\n" +
+		"  com: absent\n" +
+		"  net: absent\n" +
 		"summary\n" +
 		"  total_candidates: 3\n" +
 		"  emitted_results: 1\n" +
 		"  present_in_any: 2\n" +
 		"  absent_in_all: 1\n" +
-		"  filtered_out: 2\n" +
-		"missing.net\n" +
-		"  summary: absent in all loaded zones\n" +
-		"  com: absent\n" +
-		"  net: absent\n"
+		"  filtered_out: 2\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", stderr.String())
+
+	progress := stderr.String()
+	wantProgress := []string{
+		"[1/3] missing.net emitted",
+		"[2/3] example.net skipped",
+		"[3/3] example.com skipped",
+		"checked 3 candidate(s), emitted 1\n",
+	}
+	for _, fragment := range wantProgress {
+		if !strings.Contains(progress, fragment) {
+			t.Fatalf("stderr missing %q:\n%s", fragment, progress)
+		}
 	}
 }
 
@@ -100,21 +119,21 @@ func TestRunTextWorkflowWithCandidateStdin(t *testing.T) {
 	}
 
 	want := "" +
+		"missing.net\n" +
+		"  summary: absent in all loaded zones\n" +
+		"  com: absent\n" +
+		"  net: absent\n" +
 		"summary\n" +
 		"  total_candidates: 2\n" +
 		"  emitted_results: 1\n" +
 		"  present_in_any: 1\n" +
 		"  absent_in_all: 1\n" +
-		"  filtered_out: 1\n" +
-		"missing.net\n" +
-		"  summary: absent in all loaded zones\n" +
-		"  com: absent\n" +
-		"  net: absent\n"
+		"  filtered_out: 1\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", stderr.String())
+	if !strings.Contains(stderr.String(), "[2/2] example.net skipped") {
+		t.Fatalf("stderr = %q, want skipped progress", stderr.String())
 	}
 }
 
@@ -137,20 +156,21 @@ func TestRunTextWorkflowWithMergedCandidateSources(t *testing.T) {
 
 	got := stdout.String()
 	wantFragments := []string{
-		"  total_candidates: 5\n",
 		"example.net\n",
 		"cli-only.com\n",
 		"missing.net\n",
 		"example.com\n",
 		"stdin-only.net\n",
+		"  total_candidates: 5\n",
+		"  emitted_results: 5\n",
 	}
 	for _, fragment := range wantFragments {
 		if !bytes.Contains(stdout.Bytes(), []byte(fragment)) {
 			t.Fatalf("stdout missing %q:\n%s", fragment, got)
 		}
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", stderr.String())
+	if !strings.Contains(stderr.String(), "checked 5 candidate(s), emitted 5\n") {
+		t.Fatalf("stderr = %q, want completion line", stderr.String())
 	}
 }
 
@@ -179,7 +199,7 @@ func TestRunJSONLWorkflow(t *testing.T) {
 		t.Fatalf("zones = %#v, want deterministic order", got.Zones)
 	}
 	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", stderr.String())
+		t.Fatalf("stderr = %q, want empty in jsonl mode", stderr.String())
 	}
 }
 
@@ -208,11 +228,22 @@ func TestRunTextWorkflowToFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	if !bytes.Contains(data, []byte("missing.net")) || bytes.Contains(data, []byte("example.net\n  summary")) {
-		t.Fatalf("file output = %q, want only filtered text results", string(data))
+	wantFile := "" +
+		"missing.net\n" +
+		"  summary: absent in all loaded zones\n" +
+		"  com: absent\n" +
+		"  net: absent\n" +
+		"summary\n" +
+		"  total_candidates: 3\n" +
+		"  emitted_results: 1\n" +
+		"  present_in_any: 2\n" +
+		"  absent_in_all: 1\n" +
+		"  filtered_out: 2\n"
+	if string(data) != wantFile {
+		t.Fatalf("file output = %q, want %q", string(data), wantFile)
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", stderr.String())
+	if !strings.Contains(stderr.String(), "checked 3 candidate(s), emitted 1\n") {
+		t.Fatalf("stderr = %q, want progress completion", stderr.String())
 	}
 }
 
@@ -251,6 +282,6 @@ func TestRunJSONLWorkflowToFile(t *testing.T) {
 		t.Fatalf("got = %#v, want only filtered missing.net result", got)
 	}
 	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", stderr.String())
+		t.Fatalf("stderr = %q, want no progress in jsonl mode", stderr.String())
 	}
 }

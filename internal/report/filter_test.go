@@ -46,3 +46,16 @@ func TestApplyFilterAllPreservesOrder(t *testing.T) {
 		t.Fatalf("ApplyFilter() = %#v, want %#v", got, input)
 	}
 }
+
+func TestShouldEmit(t *testing.T) {
+	result := match.CandidateResult{Candidate: "missing.net", AbsentInAll: true}
+	if !ShouldEmit(result, FilterAll) {
+		t.Fatal("ShouldEmit(FilterAll) = false, want true")
+	}
+	if !ShouldEmit(result, FilterAbsentInAll) {
+		t.Fatal("ShouldEmit(FilterAbsentInAll) = false, want true")
+	}
+	if ShouldEmit(match.CandidateResult{Candidate: "example.net", AbsentInAll: false}, FilterAbsentInAll) {
+		t.Fatal("ShouldEmit(non-absent, FilterAbsentInAll) = true, want false")
+	}
+}

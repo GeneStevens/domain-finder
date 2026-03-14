@@ -12,6 +12,7 @@ import (
 	"github.com/gene/domain-finder/internal/match"
 	"github.com/gene/domain-finder/internal/output"
 	"github.com/gene/domain-finder/internal/report"
+	"github.com/gene/domain-finder/internal/termui"
 )
 
 // Run executes the CLI entrypoint.
@@ -67,10 +68,6 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		return err
 	}
 
-	allResults := match.ClassifyAll(multi, loadedCandidates)
-	filteredResults := report.ApplyFilter(allResults, filterMode)
-	summary := report.Summarize(allResults, filteredResults)
-
 	writer := stdout
 	if *outPath != "" {
 		file, err := os.Create(*outPath)
@@ -83,12 +80,51 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 
 	switch *format {
 	case "text":
-		return output.WriteText(writer, filteredResults, summary)
+		return runTextMode(multi, loadedCandidates, filterMode, writer, stderr)
 	case "jsonl":
+		allResults := match.ClassifyAll(multi, loadedCandidates)
+		filteredResults := report.ApplyFilter(allResults, filterMode)
 		return output.WriteJSONL(writer, filteredResults)
 	default:
 		return fmt.Errorf("unsupported -format %q: want text or jsonl", *format)
 	}
+}
+
+func runTextMode(multi *index.Multi, candidates []string, filterMode report.FilterMode, resultWriter, progressWriter io.Writer) error {
+	activity := termui.NewActivityLine(progressWriter)
+	allResults := make([]match.CandidateResult, 0, len(candidates))
+	emittedResults := make([]match.CandidateResult, 0, len(candidates))
+
+	for i, candidate := range candidates {
+		result := match.Classify(multi, candidate)
+		allResults = append(allResults, result)
+
+		emitted := report.ShouldEmit(result, filterMode)
+		status := "skipped"
+		if emitted {
+			if err := activity.Clear(); err != nil {
+				return err
+			}
+			if err := output.WriteTextResult(resultWriter, result); err != nil {
+				return err
+			}
+			emittedResults = append(emittedResults, result)
+			status = "emitted"
+		}
+
+		if err := activity.Update(fmt.Sprintf("[%d/%d] %s %s", i+1, len(candidates), result.Candidate, status)); err != nil {
+			return err
+		}
+	}
+
+	summary := report.Summarize(allResults, emittedResults)
+	if err := activity.Clear(); err != nil {
+		return err
+	}
+	if err := output.WriteTextSummary(resultWriter, summary); err != nil {
+		return err
+	}
+	return activity.Finish(fmt.Sprintf("checked %d candidate(s), emitted %d", summary.TotalCandidates, summary.EmittedResults))
 }
 
 type zoneFlag map[string]string

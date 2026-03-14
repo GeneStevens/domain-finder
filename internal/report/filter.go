@@ -41,3 +41,15 @@ func ApplyFilter(results []match.CandidateResult, mode FilterMode) []match.Candi
 	}
 	return out
 }
+
+// ShouldEmit reports whether a single result should be emitted for the filter mode.
+func ShouldEmit(result match.CandidateResult, mode FilterMode) bool {
+	switch mode {
+	case FilterAll:
+		return true
+	case FilterAbsentInAll:
+		return result.AbsentInAll
+	default:
+		return false
+	}
+}

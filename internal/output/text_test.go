@@ -43,11 +43,6 @@ func TestWriteText(t *testing.T) {
 	}
 
 	want := "" +
-		"summary\n" +
-		"  total_candidates: 2\n" +
-		"  emitted_results: 2\n" +
-		"  present_in_any: 1\n" +
-		"  absent_in_all: 1\n" +
 		"example.net\n" +
 		"  summary: present in at least one loaded zone\n" +
 		"  com: absent\n" +
@@ -55,7 +50,12 @@ func TestWriteText(t *testing.T) {
 		"missing.net\n" +
 		"  summary: absent in all loaded zones\n" +
 		"  com: absent\n" +
-		"  net: absent\n"
+		"  net: absent\n" +
+		"summary\n" +
+		"  total_candidates: 2\n" +
+		"  emitted_results: 2\n" +
+		"  present_in_any: 1\n" +
+		"  absent_in_all: 1\n"
 
 	if buf.String() != want {
 		t.Fatalf("WriteText() = %q, want %q", buf.String(), want)
@@ -71,7 +71,7 @@ func TestWriteTextIncludesFilteredOutWhenApplicable(t *testing.T) {
 		AbsentInAll:     1,
 	}
 
-	if err := WriteText(&buf, nil, summary); err != nil {
+	if err := WriteTextSummary(&buf, summary); err != nil {
 		t.Fatalf("WriteText() error = %v", err)
 	}
 
@@ -84,5 +84,31 @@ func TestWriteTextIncludesFilteredOutWhenApplicable(t *testing.T) {
 		"  filtered_out: 2\n"
 	if buf.String() != want {
 		t.Fatalf("WriteText() = %q, want %q", buf.String(), want)
+	}
+}
+
+func TestWriteTextResult(t *testing.T) {
+	var buf bytes.Buffer
+	result := match.CandidateResult{
+		Candidate:    "example.net",
+		PresentInAny: true,
+		AbsentInAll:  false,
+		Zones: []match.ZonePresence{
+			{Zone: "com", Present: false},
+			{Zone: "net", Present: true},
+		},
+	}
+
+	if err := WriteTextResult(&buf, result); err != nil {
+		t.Fatalf("WriteTextResult() error = %v", err)
+	}
+
+	want := "" +
+		"example.net\n" +
+		"  summary: present in at least one loaded zone\n" +
+		"  com: absent\n" +
+		"  net: present\n"
+	if buf.String() != want {
+		t.Fatalf("WriteTextResult() = %q, want %q", buf.String(), want)
 	}
 }
