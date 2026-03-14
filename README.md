@@ -26,6 +26,72 @@ The repository currently uses stem-based matching across loaded zones:
 Tests intentionally use small deterministic fixtures. They do not depend on
 full `.com` or `.net` CZDS zone files.
 
+## Quick examples
+
+Interactive Bubble Tea search with strong hits shown durably:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -interactive \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -candidate example \
+  -candidate missing
+```
+
+Interactive search that also keeps partial hits visible:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -interactive \
+  -interactive-show-partials \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -candidate example \
+  -candidate missing
+```
+
+Deterministic non-interactive text output:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -no-interactive \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -candidate example \
+  -candidate missing
+```
+
+Prompt-contract dry run without any API call:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -generate "industrial infrastructure names" \
+  -generate-dry-run \
+  -generate-dry-run-format json \
+  -generate-quality-profile industrial \
+  -generate-avoid-prefixes "dev,neo" \
+  -generate-avoid-suffixes "io,ia,ora,iva,ara"
+```
+
+Machine-readable run artifacts:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -no-interactive \
+  -audit-log run.jsonl \
+  -run-summary run-summary.json \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -candidate example \
+  -candidate missing
+```
+
 ## Candidate / search model
 
 - Candidate inputs are stems such as `example`, `missing`, or `my-brand`
