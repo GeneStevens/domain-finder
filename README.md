@@ -18,7 +18,7 @@ The repository currently uses stem-based matching across loaded zones:
 - `internal/openai` for batch stem generation through the OpenAI API
 - `internal/report` for filtering and summary statistics
 - `internal/output` for deterministic durable text and JSONL rendering
-- `internal/termui` for compact interactive table rendering on `stderr`
+- `internal/termui` for Bubble Tea–based interactive rendering on `stderr`
 - a CLI workflow that loads named zones, ingests stems from flags, files,
   and/or stdin, composes `<stem>.<zone>` internally, and reports per-zone
   presence or absence for each stem
@@ -318,6 +318,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 ## Interactive vs fallback text mode
 
 - Interactive console is enabled only for `text` mode when `stderr` is a TTY
+- Real TTY interactive runs now use Bubble Tea for stable terminal rendering
 - `-interactive` forces the interactive console on
 - `-no-interactive` forces the deterministic fallback report path
 - `-interactive-hide-taken` suppresses durable `taken` rows in the interactive compact table only
@@ -329,7 +330,8 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 ## Interactive console behavior
 
 - Prints a small startup header showing loaded zones, candidate count, and filter
-- Shows one reusable ephemeral live line while checking and generating
+- Uses a Bubble Tea–managed live status area while checking and generating
+- Shows one reusable live status line instead of ad hoc carriage-return composition
 - Uses that single live line for low-value batch chatter such as:
   - batch requests
   - accepted 0
@@ -356,7 +358,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - generation underfill
   - generation stop
   - final checked/emitted/strong line
-- Clears the active line cleanly on completion and prints a compact final status
+- Leaves the terminal in a clean state on normal completion without fragment collisions
 
 ## stdout / stderr / file behavior
 

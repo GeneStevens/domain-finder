@@ -1,60 +1,39 @@
 package termui
 
 import (
-	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/genestevens/domain-finder/internal/match"
 	"github.com/genestevens/domain-finder/internal/report"
 )
 
-// Console renders a lightweight streaming interactive console on stderr.
-type Console struct {
-	w            io.Writer
-	zones        []string
-	color        bool
-	hideTaken    bool
-	showPartials bool
-	candWidth    int
-	zoneWidth    int
-	statusWidth  int
-	lastLen      int
-	liveProgress string
-	liveChecking string
+type consoleImpl interface {
+	Start(total int, filter report.FilterMode) error
+	UpdateActive(index, total int, candidate string) error
+	UpdateStatus(line string) error
+	EmitRow(result match.CandidateResult) error
+	ShouldEmitRow(result match.CandidateResult) bool
+	ClearActive() error
+	Finish(summary report.Summary) error
+	Note(line string) error
 }
 
-// NewConsole creates a new streaming console.
+// Console renders the interactive terminal UI.
+type Console struct {
+	impl consoleImpl
+}
+
+// NewConsole creates a new interactive console. Real TTYs use Bubble Tea;
+// tests and non-TTY buffers keep a lightweight headless renderer.
 func NewConsole(w io.Writer, zones []string, candidates []string, color, hideTaken, showPartials bool) *Console {
-	width := len("stem")
-	for _, candidate := range candidates {
-		if len(candidate) > width {
-			width = len(candidate)
-		}
-	}
-	zoneWidth := len("available_zones")
-	if joined := strings.Join(upperZones(zones), " "); len(joined) > zoneWidth {
-		zoneWidth = len(joined)
-	}
-	if len("(none)") > zoneWidth {
-		zoneWidth = len("(none)")
-	}
-	statusWidth := len("result")
-	for _, value := range []string{"all ✓", "partial", "taken"} {
-		if len(value) > statusWidth {
-			statusWidth = len(value)
+	if IsTTY(w) {
+		return &Console{
+			impl: newBubbleConsole(w, zones, candidates, color, hideTaken, showPartials),
 		}
 	}
 	return &Console{
-		w:            w,
-		zones:        zones,
-		color:        color,
-		hideTaken:    hideTaken,
-		showPartials: showPartials,
-		candWidth:    width,
-		zoneWidth:    zoneWidth,
-		statusWidth:  statusWidth,
+		impl: newLegacyConsole(w, zones, candidates, color, hideTaken, showPartials),
 	}
 }
 
@@ -93,221 +72,66 @@ func ShouldUseColor(forceOn, forceOff bool, stderr io.Writer, isTTY func(io.Writ
 	return isTTY(stderr)
 }
 
-// Start prints the compact interactive header and table header.
+// Start initializes the interactive console.
 func (c *Console) Start(total int, filter report.FilterMode) error {
-	if c == nil || c.w == nil {
+	if c == nil || c.impl == nil {
 		return nil
 	}
-	if _, err := fmt.Fprintf(c.w, "Zone files loaded: %s\n", strings.Join(upperZones(c.zones), ", ")); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(c.w, "Searching %d stems | filter: %s\n", total, filter); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintln(c.w); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(c.w, "%-*s  %-*s  %-*s\n", c.candWidth, "stem", c.zoneWidth, "available_zones", c.statusWidth, "result"); err != nil {
-		return err
-	}
-	return nil
+	return c.impl.Start(total, filter)
 }
 
-// UpdateActive rewrites the transient active candidate line in place.
+// UpdateActive updates the current in-flight candidate display.
 func (c *Console) UpdateActive(index, total int, candidate string) error {
-	if c == nil || c.w == nil {
+	if c == nil || c.impl == nil {
 		return nil
 	}
-	c.liveChecking = fmt.Sprintf("checking: %s... [%d/%d]", truncate(candidate, c.candWidth+4), index, total)
-	return c.redrawLive()
+	return c.impl.UpdateActive(index, total, candidate)
 }
 
-// UpdateStatus rewrites the transient generation/search status line in place.
+// UpdateStatus updates the current ephemeral progress line.
 func (c *Console) UpdateStatus(line string) error {
-	if c == nil || c.w == nil {
+	if c == nil || c.impl == nil {
 		return nil
 	}
-	c.liveProgress = strings.TrimSpace(line)
-	return c.redrawLive()
+	return c.impl.UpdateStatus(line)
 }
 
-// EmitRow writes a durable emitted row to the console.
+// EmitRow appends a durable result row when the current UI policy allows it.
 func (c *Console) EmitRow(result match.CandidateResult) error {
-	if !c.ShouldEmitRow(result) {
-		return c.ClearActive()
-	}
-	if err := c.clearForDurable(false); err != nil {
-		return err
-	}
-	if c == nil || c.w == nil {
+	if c == nil || c.impl == nil {
 		return nil
 	}
-	_, err := fmt.Fprintln(c.w, c.formatRow(result))
-	return err
+	return c.impl.EmitRow(result)
 }
 
-// ShouldEmitRow reports whether the result should be shown as a durable
-// interactive row under the current UI policy.
+// ShouldEmitRow reports whether the result should remain durably visible.
 func (c *Console) ShouldEmitRow(result match.CandidateResult) bool {
-	if c == nil {
+	if c == nil || c.impl == nil {
 		return true
 	}
-	if result.AbsentInAll {
-		return true
-	}
-	if c.showPartials && c.availableZonesText(result) != "(none)" {
-		return true
-	}
-	if c.hideTaken {
-		return false
-	}
-	return false
+	return c.impl.ShouldEmitRow(result)
 }
 
-// ClearActive clears the transient active line.
+// ClearActive clears the transient active candidate line or state.
 func (c *Console) ClearActive() error {
-	if c == nil || c.w == nil {
+	if c == nil || c.impl == nil {
 		return nil
 	}
-	c.liveChecking = ""
-	return c.redrawLive()
+	return c.impl.ClearActive()
 }
 
-// Finish clears any active line and prints a compact completion line.
+// Finish completes the interactive run.
 func (c *Console) Finish(summary report.Summary) error {
-	if err := c.clearForDurable(true); err != nil {
-		return err
-	}
-	if c == nil || c.w == nil {
+	if c == nil || c.impl == nil {
 		return nil
 	}
-	_, err := fmt.Fprintf(c.w, "Done: checked %d | emitted %d | strong %d\n", summary.TotalCandidates, summary.EmittedResults, summary.AbsentInAll)
-	return err
+	return c.impl.Finish(summary)
 }
 
-// Note writes a durable status line to the console without leaving the active
-// line smeared across the terminal.
+// Note appends a durable summary line.
 func (c *Console) Note(line string) error {
-	if err := c.clearForDurable(true); err != nil {
-		return err
-	}
-	if c == nil || c.w == nil {
+	if c == nil || c.impl == nil {
 		return nil
 	}
-	_, err := fmt.Fprintln(c.w, line)
-	return err
-}
-
-func (c *Console) redrawLive() error {
-	line := c.liveLine()
-	if line == "" {
-		return c.clearLine()
-	}
-	return c.writeLiveLine(line)
-}
-
-func (c *Console) liveLine() string {
-	return strings.TrimSpace(strings.Join(nonEmpty([]string{c.liveProgress, c.liveChecking}), " | "))
-}
-
-func (c *Console) writeLiveLine(line string) error {
-	padding := ""
-	if c.lastLen > len(line) {
-		padding = strings.Repeat(" ", c.lastLen-len(line))
-	}
-	if _, err := fmt.Fprintf(c.w, "\r%s%s", line, padding); err != nil {
-		return err
-	}
-	c.lastLen = len(line)
-	return nil
-}
-
-func (c *Console) clearLine() error {
-	if c == nil || c.w == nil || c.lastLen == 0 {
-		return nil
-	}
-	if _, err := fmt.Fprintf(c.w, "\r%s\r", strings.Repeat(" ", c.lastLen)); err != nil {
-		return err
-	}
-	c.lastLen = 0
-	return nil
-}
-
-func (c *Console) clearForDurable(resetProgress bool) error {
-	if c == nil || c.w == nil {
-		return nil
-	}
-	c.liveChecking = ""
-	if resetProgress {
-		c.liveProgress = ""
-	}
-	return c.clearLine()
-}
-
-func (c *Console) formatRow(result match.CandidateResult) string {
-	availableText := c.availableZonesText(result)
-	statusText := c.statusText(result)
-	return fmt.Sprintf("%-*s  %-*s  %-*s", c.candWidth, result.Candidate, c.zoneWidth, availableText, c.statusWidth, statusText)
-}
-
-func (c *Console) availableZonesText(result match.CandidateResult) string {
-	available := make([]string, 0, len(result.Zones))
-	for _, zone := range result.Zones {
-		if !zone.Present {
-			available = append(available, strings.ToUpper(zone.Zone))
-		}
-	}
-	if len(available) == 0 {
-		return "(none)"
-	}
-	return strings.Join(available, " ")
-}
-
-func (c *Console) statusText(result match.CandidateResult) string {
-	switch {
-	case result.AbsentInAll:
-		return c.styleStrong("all ✓")
-	case result.PresentInAny:
-		if c.availableZonesText(result) == "(none)" {
-			return "taken"
-		}
-		return "partial"
-	default:
-		return "partial"
-	}
-}
-
-func upperZones(zones []string) []string {
-	parts := make([]string, 0, len(zones))
-	for _, zone := range zones {
-		parts = append(parts, strings.ToUpper(zone))
-	}
-	return parts
-}
-
-func truncate(value string, width int) string {
-	if len(value) <= width {
-		return value
-	}
-	if width <= 1 {
-		return value[:width]
-	}
-	return value[:width-1]
-}
-
-func (c *Console) styleStrong(value string) string {
-	if !c.color {
-		return value
-	}
-	return "\x1b[1;97;42m" + value + "\x1b[0m"
-}
-
-func nonEmpty(parts []string) []string {
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if strings.TrimSpace(part) != "" {
-			out = append(out, part)
-		}
-	}
-	return out
+	return c.impl.Note(line)
 }

@@ -24,7 +24,7 @@ available domains.
 - `internal/output`: deterministic durable text and JSONL rendering
 - `internal/audit`: JSONL audit logging for one record per checked stem
 - `internal/runsummary`: one JSON artifact per run with resolved context and final counters
-- `internal/termui`: compact interactive stderr table rendering
+- `internal/termui`: Bubble Tea–based interactive stderr rendering
 - `testdata/small`: tiny deterministic fixtures used by tests
 - `testdata/slices`: reserved for small realistic slices, never giant CZDS files
 
@@ -145,10 +145,10 @@ available domains.
 - `internal/output` owns deterministic fallback/file rendering.
 - `internal/audit` owns durable machine-readable per-stem run logging.
 - `internal/runsummary` owns durable machine-readable per-run summary output.
-- `internal/termui` owns the compact streaming interactive table on `stderr`.
+- `internal/termui` owns the Bubble Tea interactive renderer on `stderr`.
 - Interactive console prints:
   - a small startup header
-  - one reusable live line that combines current progress and current `checking:` state
+  - one Bubble Tea–managed live status area that combines current progress and current `checking:` state
   - one-line durable emitted stem rows only for meaningful discoveries
   - an `available_zones` column that explicitly lists which requested zones are available
   - a compact `result` column:
@@ -160,7 +160,7 @@ available domains.
   - optional taken-row suppression for the interactive tape only
   - optional partial-row retention via `-interactive-show-partials`
   - a compact final completion line
-- Interactive mode keeps the compact human-facing table on `stderr`; deterministic detailed output is preserved for non-interactive mode and `-out` files.
+- Interactive mode keeps the compact human-facing Bubble Tea display on `stderr`; deterministic detailed output is preserved for non-interactive mode and `-out` files.
 - Audit logging is separate from both interactive and deterministic output paths, and records all checked stems whether or not they were visibly shown.
 - Run-summary output is separate from both audit logging and result output, and captures one structured run-level view of settings plus outcomes.
 - Run-summary output also captures configured generation stop conditions and the actual stop reason when generation is used.
@@ -211,10 +211,8 @@ fixtures or tiny realistic slices under `testdata/`.
 
 ## Deferred work
 
-- No concurrency yet.
-- No full-screen TUI framework.
-- No advanced terminal UI beyond the streaming stderr console.
 - No concurrency in generation or matching.
+- No advanced terminal interaction beyond the Bubble Tea status-and-results display.
 - No registrar checks or probabilistic availability logic.
 - No filename-based zone inference.
 - No large-file optimization beyond streaming reads.

@@ -89,17 +89,16 @@ func TestConsoleFormatsPartialRowsClearlyAndSuppressesTakenRows(t *testing.T) {
 }
 
 func TestConsoleAdaptsColumnWidths(t *testing.T) {
-	var buf bytes.Buffer
-	console := NewConsole(&buf, []string{"com", "network", "org"}, []string{"verylongstemname"}, false, false, true)
+	candWidth, zoneWidth, statusWidth := consoleColumnWidths([]string{"com", "network", "org"}, []string{"verylongstemname"})
 
-	if console.candWidth < len("verylongstemname") {
-		t.Fatalf("candWidth = %d, want width for longest stem", console.candWidth)
+	if candWidth < len("verylongstemname") {
+		t.Fatalf("candWidth = %d, want width for longest stem", candWidth)
 	}
-	if console.zoneWidth < len("COM NETWORK ORG") {
-		t.Fatalf("zoneWidth = %d, want width for joined zones", console.zoneWidth)
+	if zoneWidth < len("COM NETWORK ORG") {
+		t.Fatalf("zoneWidth = %d, want width for joined zones", zoneWidth)
 	}
-	if console.statusWidth < len("partial") {
-		t.Fatalf("statusWidth = %d, want width for status labels", console.statusWidth)
+	if statusWidth < len("partial") {
+		t.Fatalf("statusWidth = %d, want width for status labels", statusWidth)
 	}
 }
 
