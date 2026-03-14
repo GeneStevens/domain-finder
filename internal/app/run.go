@@ -60,6 +60,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	generateStyle := fs.String("generate-style", "", "style guidance for generation, such as invented SaaS or developer tool")
 	generateCount := fs.Int("generate-count", 0, "total number of stems to generate")
 	generateBatchSize := fs.Int("generate-batch-size", 0, "number of stems requested per generation batch")
+	generateAdaptiveRefill := fs.Bool("generate-adaptive-refill", false, "shrink effective generation batch size after repeated underfilled batches")
+	generateMinBatchSize := fs.Int("generate-min-batch-size", 0, "minimum effective batch size when adaptive refill is enabled")
 	generateQualityProfile := fs.String("generate-quality-profile", "", "generated-stem quality profile: industrial | off")
 	generateMaxLength := fs.Int("generate-max-length", 0, "preferred maximum letters per generated stem")
 	generateMaxSyllables := fs.Int("generate-max-syllables", 0, "preferred maximum syllables per generated stem")
@@ -176,6 +178,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			OpenAIModel:              strings.TrimSpace(*generateModel),
 			GenerateCount:            *generateCount,
 			GenerateBatchSize:        *generateBatchSize,
+			GenerateAdaptiveRefill:   *generateAdaptiveRefill,
+			GenerateMinBatchSize:     *generateMinBatchSize,
 			GenerateQualityProfile:   strings.TrimSpace(*generateQualityProfile),
 			GenerateMaxLength:        *generateMaxLength,
 			GenerateMaxSyllables:     *generateMaxSyllables,
@@ -702,29 +706,32 @@ func buildRunSummary(backendName string, requestedZones []string, filterMode rep
 	}
 	if outcome.GenerationRequested {
 		artifact.Generation = &runsummary.Generation{
-			Model:              cfg.OpenAI.Model,
-			Prompt:             generatePrompt,
-			Style:              cfg.Generate.Style,
-			GenerateCount:      cfg.Generate.Count,
-			BatchSize:          cfg.Generate.BatchSize,
-			MaxAttempts:        cfg.Generate.MaxAttemptsPerBatch,
-			RetryCount:         cfg.Generate.RetryCount,
-			QualityProfile:     cfg.Generate.QualityProfile,
-			AvoidSubstrings:    append([]string(nil), cfg.Generate.AvoidSubstrings...),
-			AvoidPrefixes:      append([]string(nil), cfg.Generate.AvoidPrefixes...),
-			AvoidSuffixes:      append([]string(nil), cfg.Generate.AvoidSuffixes...),
-			MaxCostUSD:         cfg.Generate.MaxCostUSD,
-			TargetStrongHits:   cfg.Generate.TargetStrongHits,
-			MaxStallBatches:    cfg.Generate.MaxStallBatches,
-			AcceptedCount:      outcome.GeneratedAccepted,
-			UnderfilledBatches: outcome.Underfills.Batches,
-			UnderfilledStems:   outcome.Underfills.Stems,
-			StopReason:         string(stopReason(outcome.Stop)),
-			InputTokens:        outcome.UsageTotals.InputTokens,
-			OutputTokens:       outcome.UsageTotals.OutputTokens,
-			CachedInputTokens:  outcome.UsageTotals.CachedInputTokens,
-			PricingAvailable:   outcome.UsageTotals.PricingAvailable,
-			EstimatedCostUSD:   outcome.UsageTotals.EstimatedCostUSD,
+			Model:                   cfg.OpenAI.Model,
+			Prompt:                  generatePrompt,
+			Style:                   cfg.Generate.Style,
+			GenerateCount:           cfg.Generate.Count,
+			BatchSize:               cfg.Generate.BatchSize,
+			AdaptiveRefill:          cfg.Generate.AdaptiveRefill,
+			MinBatchSize:            cfg.Generate.MinBatchSize,
+			FinalEffectiveBatchSize: outcome.Underfills.FinalEffectiveBatchSize,
+			MaxAttempts:             cfg.Generate.MaxAttemptsPerBatch,
+			RetryCount:              cfg.Generate.RetryCount,
+			QualityProfile:          cfg.Generate.QualityProfile,
+			AvoidSubstrings:         append([]string(nil), cfg.Generate.AvoidSubstrings...),
+			AvoidPrefixes:           append([]string(nil), cfg.Generate.AvoidPrefixes...),
+			AvoidSuffixes:           append([]string(nil), cfg.Generate.AvoidSuffixes...),
+			MaxCostUSD:              cfg.Generate.MaxCostUSD,
+			TargetStrongHits:        cfg.Generate.TargetStrongHits,
+			MaxStallBatches:         cfg.Generate.MaxStallBatches,
+			AcceptedCount:           outcome.GeneratedAccepted,
+			UnderfilledBatches:      outcome.Underfills.Batches,
+			UnderfilledStems:        outcome.Underfills.Stems,
+			StopReason:              string(stopReason(outcome.Stop)),
+			InputTokens:             outcome.UsageTotals.InputTokens,
+			OutputTokens:            outcome.UsageTotals.OutputTokens,
+			CachedInputTokens:       outcome.UsageTotals.CachedInputTokens,
+			PricingAvailable:        outcome.UsageTotals.PricingAvailable,
+			EstimatedCostUSD:        outcome.UsageTotals.EstimatedCostUSD,
 		}
 	}
 	return artifact
@@ -740,7 +747,9 @@ func writeRunSummary(file *os.File, artifact runsummary.Artifact) error {
 func renderGenerationEvent(event openai.Event) string {
 	switch event.Type {
 	case openai.EventBatchRequest:
-		return fmt.Sprintf("generation: batch %d attempt %d requesting %d stems", event.Batch, event.Attempt, event.Requested)
+		line := fmt.Sprintf("generation: batch %d attempt %d requesting %d stems", event.Batch, event.Attempt, event.Requested)
+		line += renderAdaptiveBatchSize(event)
+		return line
 	case openai.EventBatchResult:
 		if event.Err != nil && openai.IsQuality(event.Err) {
 			return fmt.Sprintf("generation: batch %d attempt %d produced unusable output, need %d more", event.Batch, event.Attempt, event.RemainingBatch)
@@ -749,6 +758,7 @@ func renderGenerationEvent(event openai.Event) string {
 		if event.Underfilled > 0 {
 			line += fmt.Sprintf(" | underfilled %d", event.Underfilled)
 		}
+		line += renderAdaptiveBatchSize(event)
 		if event.Usage != nil {
 			if event.LastEstimate.PricingAvailable {
 				line += fmt.Sprintf(" | last %s | total %s", openai.FormatCostUSD(event.LastEstimate.CostUSD), openai.FormatCostUSD(event.Totals.EstimatedCostUSD))
@@ -785,6 +795,19 @@ func renderGenerationEvent(event openai.Event) string {
 	default:
 		return ""
 	}
+}
+
+func renderAdaptiveBatchSize(event openai.Event) string {
+	if event.EffectiveBatchSize <= 0 {
+		return ""
+	}
+	if event.BaseBatchSize > 0 && event.BaseBatchSize != event.EffectiveBatchSize {
+		return fmt.Sprintf(" | batch_size %d->%d", event.BaseBatchSize, event.EffectiveBatchSize)
+	}
+	if event.BaseBatchSize > 0 {
+		return fmt.Sprintf(" | effective_batch %d", event.EffectiveBatchSize)
+	}
+	return ""
 }
 
 func renderStopProgress(stop openai.StopSnapshot) string {

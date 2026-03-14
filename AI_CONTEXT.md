@@ -101,6 +101,7 @@ available domains.
   - `internal/openai` owns a dedicated prompt builder for the generation contract
   - prompt constraints can steer length, syllables, prefix, suffix, style, banned substrings, and the generated quality profile
   - generation runs can also stop on explicit budget- and goal-shaped controls such as cost cap, strong-hit target, and stall limit
+  - generation runs can also use adaptive refill to shrink effective batch size after repeated underfilled batches
   - generated outputs must be stems only, not FQDNs
   - each batch has bounded fulfillment attempts
   - exhausted refill attempts now produce underfilled-batch diagnostics instead of aborting the run
@@ -113,12 +114,17 @@ available domains.
   - the `industrial` profile now explicitly favors compact 5-7 character names, stronger consonant anchors, denser consonant structure, and harder endings
   - generated acceptance also applies a deterministic family-diversity guard so one near-identical name family does not dominate the accepted pool
   - generation stop control is centralized in `internal/openai/stop.go`
+  - adaptive refill control is centralized in `internal/openai/refill.go`
   - any configured stop condition can end the run:
     - accepted-count target
     - estimated cost cap
     - strong-hit target
     - stall limit
   - stall is currently defined as consecutive batches with zero newly accepted stems and zero increase in strong all-zone hits
+  - adaptive refill currently uses a simple one-way shrink:
+    - after 2 consecutive underfilled batches, halve the effective batch size
+    - never shrink below the configured minimum
+    - do not grow back during the run
   - text-mode generation runs now print a compact end-of-run diagnostics block summarizing dominant rejection categories
   - text-mode generation runs also print compact underfill totals when one or more batches finish short
   - text-mode generation runs also print a compact `generation stop` block when a stop condition ends the run
@@ -157,6 +163,7 @@ available domains.
 - Run-summary output is separate from both audit logging and result output, and captures one structured run-level view of settings plus outcomes.
 - Run-summary output also captures configured generation stop conditions and the actual stop reason when generation is used.
 - Run-summary output also captures underfilled-batch totals for generated runs.
+- Run-summary output also captures adaptive-refill settings plus the final effective batch size for generated runs.
 - When OpenAI returns `usage`, generation runs also accumulate token totals and estimated cost from a small built-in pricing table.
 - JSONL bypasses `termui` entirely.
 
@@ -175,6 +182,7 @@ available domains.
 - `-generate-count`, `-generate-batch-size`, and `-generate-model` override generation config.
 - `-generate-style`, `-generate-quality-profile`, `-generate-max-length`, `-generate-max-syllables`, `-generate-prefix`, `-generate-suffix`, `-generate-avoid-substrings`, `-generate-avoid-prefixes`, and `-generate-avoid-suffixes` steer prompt construction.
 - `-generate-max-cost-usd`, `-generate-target-strong-hits`, and `-generate-max-stall-batches` add budget- and goal-driven generation stop conditions.
+- `-generate-adaptive-refill` and `-generate-min-batch-size` control adaptive request shrinking for sparse late-run generation.
 - `generate.max_attempts` and `generate.retry_count` harden generation behavior from YAML/env config.
 - `-format text|jsonl` selects a human-readable or machine-readable output mode.
 - `-filter all|absent-in-all` controls which results are emitted.

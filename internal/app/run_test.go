@@ -861,6 +861,8 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 		"generate:\n" +
 		"  count: 4\n" +
 		"  batch_size: 2\n" +
+		"  adaptive_refill: true\n" +
+		"  min_batch_size: 1\n" +
 		"  quality_profile: industrial\n" +
 		"  max_length: 9\n" +
 		"  max_syllables: 2\n" +
@@ -921,6 +923,9 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 	if captured.BatchSize != 2 {
 		t.Fatalf("captured.BatchSize = %d, want 2 from config", captured.BatchSize)
 	}
+	if !captured.AdaptiveRefill || captured.MinBatchSize != 1 {
+		t.Fatalf("captured adaptive refill = %#v, want enabled/min 1 from config", captured)
+	}
 	if captured.QualityProfile != "industrial" {
 		t.Fatalf("captured.QualityProfile = %q, want industrial from config", captured.QualityProfile)
 	}
@@ -967,6 +972,8 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"generate:\n" +
 		"  count: 4\n" +
 		"  batch_size: 2\n" +
+		"  adaptive_refill: true\n" +
+		"  min_batch_size: 1\n" +
 		"  max_attempts: 3\n" +
 		"  retry_count: 1\n" +
 		"  quality_profile: industrial\n" +
@@ -1016,6 +1023,8 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"model: yaml-model",
 		"generate_count: 4",
 		"batch_size: 2",
+		"adaptive_refill: true",
+		"min_batch_size: 1",
 		"max_attempts: 3",
 		"retry_count: 1",
 		"quality_profile: industrial",
@@ -1049,6 +1058,8 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"generate:\n" +
 		"  count: 4\n" +
 		"  batch_size: 2\n" +
+		"  adaptive_refill: true\n" +
+		"  min_batch_size: 1\n" +
 		"  quality_profile: industrial\n" +
 		"  max_length: 9\n" +
 		"  max_syllables: 2\n" +
@@ -1085,6 +1096,8 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"-generate-model", "cli-model",
 		"-generate-count", "8",
 		"-generate-batch-size", "4",
+		"-generate-adaptive-refill",
+		"-generate-min-batch-size", "2",
 		"-generate-quality-profile", "off",
 		"-generate-max-length", "12",
 		"-generate-max-syllables", "3",
@@ -1107,6 +1120,8 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"model: cli-model",
 		"generate_count: 8",
 		"batch_size: 4",
+		"adaptive_refill: true",
+		"min_batch_size: 2",
 		"quality_profile: off",
 		"max_length: 12",
 		"max_syllables: 3",
@@ -1137,6 +1152,8 @@ func TestRunGenerateDryRunJSONOutput(t *testing.T) {
 		"generate:\n" +
 		"  count: 4\n" +
 		"  batch_size: 2\n" +
+		"  adaptive_refill: true\n" +
+		"  min_batch_size: 1\n" +
 		"  max_attempts: 3\n" +
 		"  retry_count: 1\n" +
 		"  quality_profile: industrial\n" +
@@ -1211,6 +1228,9 @@ func TestRunGenerateDryRunJSONOutput(t *testing.T) {
 	if constraints["max_cost_usd"] != 0.5 || constraints["target_strong_hits"] != float64(4) || constraints["max_stall_batches"] != float64(5) {
 		t.Fatalf("constraints = %#v, want stop-condition values", constraints)
 	}
+	if constraints["adaptive_refill"] != true || constraints["min_batch_size"] != float64(1) {
+		t.Fatalf("constraints = %#v, want adaptive refill values", constraints)
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty dry-run stderr", stderr.String())
 	}
@@ -1224,6 +1244,8 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		"generate:\n" +
 		"  count: 4\n" +
 		"  batch_size: 2\n" +
+		"  adaptive_refill: true\n" +
+		"  min_batch_size: 1\n" +
 		"  quality_profile: industrial\n" +
 		"  max_length: 9\n" +
 		"  max_syllables: 2\n" +
@@ -1252,6 +1274,8 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		"-generate-model", "cli-model",
 		"-generate-count", "8",
 		"-generate-batch-size", "4",
+		"-generate-adaptive-refill",
+		"-generate-min-batch-size", "2",
 		"-generate-quality-profile", "off",
 		"-generate-max-length", "12",
 		"-generate-max-syllables", "3",
@@ -1292,6 +1316,9 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 	}
 	if constraints["max_cost_usd"] != 1.25 || constraints["target_strong_hits"] != float64(8) || constraints["max_stall_batches"] != float64(6) {
 		t.Fatalf("constraints = %#v, want CLI stop-condition values", constraints)
+	}
+	if constraints["adaptive_refill"] != true || constraints["min_batch_size"] != float64(2) {
+		t.Fatalf("constraints = %#v, want CLI adaptive refill values", constraints)
 	}
 	if got["style"] != "developer tool" {
 		t.Fatalf("style = %#v, want developer tool", got["style"])
@@ -2046,5 +2073,77 @@ func TestRunSummaryIncludesUnderfillStatistics(t *testing.T) {
 	generation := got["generation"].(map[string]any)
 	if generation["underfilled_batches"] != float64(1) || generation["underfilled_stems"] != float64(2) {
 		t.Fatalf("generation = %#v, want underfill totals", generation)
+	}
+}
+
+func TestRunAdaptiveRefillShrinksBatchSizeAndRecordsSummary(t *testing.T) {
+	dir := t.TempDir()
+	summaryPath := filepath.Join(dir, "run-summary.json")
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 5\n  batch_size: 4\n  adaptive_refill: true\n  min_batch_size: 2\n  max_attempts: 2\n  retry_count: 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		responses: []fakeStemResponse{
+			{result: openai.BatchResult{Stems: []string{"missing", "bad.name", "still bad", "also bad"}}},
+			{result: openai.BatchResult{Stems: []string{"missing", "bad.again", "ever bad", "never.bad"}}},
+			{result: openai.BatchResult{Stems: []string{"noviq", "worse bad", "still.bad", "also.bad"}}},
+			{result: openai.BatchResult{Stems: []string{"noviq", "again bad", "bad.bad", "no good"}}},
+			{result: openai.BatchResult{Stems: []string{"traktor", "qentil"}}},
+			{result: openai.BatchResult{Stems: []string{"fysten"}}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-run-summary", summaryPath,
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-generate", "short invented brand stems",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	progress := stderr.String()
+	for _, fragment := range []string{
+		"generation: batch 1 attempt 1 requesting 4 stems | effective_batch 4",
+		"generation: batch 3 attempt 1 requesting 2 stems | batch_size 4->2",
+		"generation: batch 4 attempt 1 requesting 1 stems | batch_size 4->2",
+		"generation underfill",
+	} {
+		if !strings.Contains(progress, fragment) {
+			t.Fatalf("stderr missing %q:\n%s", fragment, progress)
+		}
+	}
+	if !reflect.DeepEqual(generator.calls, []int{4, 3, 4, 3, 2, 1}) {
+		t.Fatalf("generator calls = %#v, want [4 3 4 3 2 1]", generator.calls)
+	}
+
+	data, err := os.ReadFile(summaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\n%s", err, string(data))
+	}
+	generation := got["generation"].(map[string]any)
+	if generation["adaptive_refill"] != true || generation["min_batch_size"] != float64(2) || generation["final_effective_batch_size"] != float64(2) {
+		t.Fatalf("generation = %#v, want adaptive refill fields", generation)
+	}
+	if generation["underfilled_batches"] != float64(2) || generation["underfilled_stems"] != float64(6) {
+		t.Fatalf("generation = %#v, want repeated underfill totals", generation)
 	}
 }

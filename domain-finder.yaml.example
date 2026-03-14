@@ -20,6 +20,8 @@ generate:
   # Keep count as a fallback stop condition even when budget/goal conditions are also set.
   count: 200
   batch_size: 10
+  adaptive_refill: true
+  min_batch_size: 2
   max_attempts: 3
   retry_count: 2
   max_cost_usd: 1.00

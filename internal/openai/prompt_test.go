@@ -24,6 +24,8 @@ func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 		MaxCostUSD:       1.25,
 		TargetStrongHits: 7,
 		MaxStallBatches:  4,
+		AdaptiveRefill:   true,
+		MinBatchSize:     2,
 	}, 25)
 
 	wantFragments := []string{
@@ -46,6 +48,8 @@ func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 		"estimated spend reaches $1.25",
 		"7 strong all-zone hits",
 		"4 consecutive stall batches",
+		"adaptive refill may shrink the effective batch size",
+		"never below 2",
 		"Do not include bullets, numbering, commentary, or duplicate stems.",
 	}
 	for _, fragment := range wantFragments {
@@ -69,9 +73,11 @@ func TestNewPromptInputFromConfig(t *testing.T) {
 		MaxCostUSD:       0.75,
 		TargetStrongHits: 5,
 		MaxStallBatches:  3,
+		AdaptiveRefill:   true,
+		MinBatchSize:     2,
 	})
 
-	if got.QualityProfile != "industrial" || got.Theme != "security names" || got.Style != "security product" || got.MaxLength != 10 || got.MaxSyllables != 2 || got.Prefix != "sec" || got.Suffix != "ix" || len(got.AvoidSubstrings) != 2 || len(got.AvoidPrefixes) != 1 || len(got.AvoidSuffixes) != 2 || got.MaxCostUSD != 0.75 || got.TargetStrongHits != 5 || got.MaxStallBatches != 3 {
+	if got.QualityProfile != "industrial" || got.Theme != "security names" || got.Style != "security product" || got.MaxLength != 10 || got.MaxSyllables != 2 || got.Prefix != "sec" || got.Suffix != "ix" || len(got.AvoidSubstrings) != 2 || len(got.AvoidPrefixes) != 1 || len(got.AvoidSuffixes) != 2 || got.MaxCostUSD != 0.75 || got.TargetStrongHits != 5 || got.MaxStallBatches != 3 || !got.AdaptiveRefill || got.MinBatchSize != 2 {
 		t.Fatalf("NewPromptInput() = %#v, want populated constraint input", got)
 	}
 }
@@ -99,6 +105,8 @@ func TestBuildContractAndRender(t *testing.T) {
 			MaxCostUSD:          1.25,
 			TargetStrongHits:    7,
 			MaxStallBatches:     4,
+			AdaptiveRefill:      true,
+			MinBatchSize:        2,
 		},
 	}, "short product name stems")
 
@@ -127,6 +135,8 @@ func TestBuildContractAndRender(t *testing.T) {
 		"max_cost_usd: 1.25",
 		"target_strong_hits: 7",
 		"max_stall_batches: 4",
+		"adaptive_refill: true",
+		"min_batch_size: 2",
 		"system prompt",
 		"user prompt",
 		"start with `dev`",
@@ -165,6 +175,8 @@ func TestRenderContractJSON(t *testing.T) {
 			MaxCostUSD:          1.25,
 			TargetStrongHits:    7,
 			MaxStallBatches:     4,
+			AdaptiveRefill:      true,
+			MinBatchSize:        2,
 		},
 	}, "short product name stems")
 
@@ -214,6 +226,9 @@ func TestRenderContractJSON(t *testing.T) {
 	}
 	if constraints["max_cost_usd"] != 1.25 || constraints["target_strong_hits"] != float64(7) || constraints["max_stall_batches"] != float64(4) {
 		t.Fatalf("constraints = %#v, want stop-condition fields", constraints)
+	}
+	if constraints["adaptive_refill"] != true || constraints["min_batch_size"] != float64(2) {
+		t.Fatalf("constraints = %#v, want adaptive refill fields", constraints)
 	}
 	if got["system_prompt"] == "" || got["user_prompt"] == "" {
 		t.Fatalf("prompts missing in %#v", got)

@@ -9,7 +9,7 @@ import (
 
 func TestLoadPrecedence(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, baseConfigName), []byte("openai:\n  model: base-model\npostgres:\n  dsn: postgres://base\ngenerate:\n  count: 5\n  batch_size: 2\n  quality_profile: industrial\n  max_length: 8\n  suffix: ix\n  avoid_substrings: dev,cloud\n  avoid_prefixes: dev,neo\n  avoid_suffixes: ia,ora\n  max_cost_usd: 0.25\n  target_strong_hits: 3\n  max_stall_batches: 4\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, baseConfigName), []byte("openai:\n  model: base-model\npostgres:\n  dsn: postgres://base\ngenerate:\n  count: 5\n  batch_size: 2\n  adaptive_refill: true\n  min_batch_size: 1\n  quality_profile: industrial\n  max_length: 8\n  suffix: ix\n  avoid_substrings: dev,cloud\n  avoid_prefixes: dev,neo\n  avoid_suffixes: ia,ora\n  max_cost_usd: 0.25\n  target_strong_hits: 3\n  max_stall_batches: 4\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, localConfigName), []byte("openai:\n  api_key: local-key\n  model: local-model\ngenerate:\n  count: 7\n  max_attempts: 4\n  retry_count: 1\n  max_syllables: 2\n  prefix: neo\n  style: developer tool\n"), 0o644); err != nil {
@@ -20,6 +20,7 @@ func TestLoadPrecedence(t *testing.T) {
 		"OPENAI_API_KEY":                           "env-key",
 		"DOMAINFINDER_OPENAI_MODEL":                "env-model",
 		"DOMAINFINDER_GENERATE_BATCH_SIZE":         "4",
+		"DOMAINFINDER_GENERATE_MIN_BATCH_SIZE":     "3",
 		"DOMAINFINDER_GENERATE_RETRY_COUNT":        "5",
 		"DOMAINFINDER_GENERATE_QUALITY_PROFILE":    "off",
 		"DOMAINFINDER_GENERATE_SUFFIX":             "io",
@@ -37,6 +38,8 @@ func TestLoadPrecedence(t *testing.T) {
 		OpenAIModel:              "cli-model",
 		GenerateCount:            9,
 		GenerateBatchSize:        6,
+		GenerateAdaptiveRefill:   true,
+		GenerateMinBatchSize:     2,
 		GenerateQualityProfile:   "industrial",
 		GenerateMaxLength:        12,
 		GenerateMaxSyllables:     3,
@@ -65,6 +68,12 @@ func TestLoadPrecedence(t *testing.T) {
 	}
 	if cfg.Generate.BatchSize != 6 {
 		t.Fatalf("Generate.BatchSize = %d, want 6", cfg.Generate.BatchSize)
+	}
+	if !cfg.Generate.AdaptiveRefill {
+		t.Fatal("Generate.AdaptiveRefill = false, want true")
+	}
+	if cfg.Generate.MinBatchSize != 2 {
+		t.Fatalf("Generate.MinBatchSize = %d, want 2", cfg.Generate.MinBatchSize)
 	}
 	if cfg.Generate.MaxAttemptsPerBatch != 4 {
 		t.Fatalf("Generate.MaxAttemptsPerBatch = %d, want 4", cfg.Generate.MaxAttemptsPerBatch)

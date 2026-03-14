@@ -99,6 +99,8 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate "prompt text"` requests OpenAI-generated stems
 - `-generate-count` sets the total requested stem count
 - `-generate-batch-size` sets the per-request batch size
+- `-generate-adaptive-refill` shrinks effective batch size after repeated underfilled batches
+- `-generate-min-batch-size` sets the minimum effective batch size for adaptive refill
 - `-generate-model` overrides the configured OpenAI model
 - `-generate-style` adds reusable style guidance such as `invented SaaS` or `developer tool`
 - `-generate-quality-profile industrial|off` applies a generated-only quality filter after validation and lexical bans
@@ -174,11 +176,35 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - configured stop-condition settings
   - actual stop reason at run end
 
+## Adaptive refill policy
+
+- `-generate-adaptive-refill` is an opt-in sparse-search policy for longer generation runs
+- When enabled:
+  - generation starts at the configured `batch_size`
+  - repeated underfilled batches shrink the effective batch size for later batches
+  - the first version uses a simple one-way shrink for the run
+  - after 2 consecutive underfilled batches, the effective batch size is cut in half
+  - it will not shrink below `-generate-min-batch-size`
+- Recovery is intentionally simple in v1:
+  - batch size does not grow back during the same run
+- Adaptive refill only changes request sizing
+  - it does not change acceptance logic
+  - it does not change lookup semantics
+  - it does not change stop-condition semantics
+- When enabled, status lines show the active effective batch size:
+  - `effective_batch 8`
+  - `batch_size 8->4`
+- The run summary records:
+  - whether adaptive refill was enabled
+  - the configured minimum batch size
+  - the final effective batch size
+
 ## Generation dry run
 
 - `-generate-dry-run` is an inspection mode for prompt tuning
 - It prints the resolved model, generation counts, retry policy, quality profile, theme, style, structural constraints, and the final prompt-builder output
 - It also prints the resolved stop-condition policy such as cost cap, strong-hit target, and stall limit
+- It also prints adaptive-refill policy such as whether it is enabled and the minimum batch size
 - `-generate-dry-run-format text` keeps the current readable inspection block
 - `-generate-dry-run-format json` emits a stable JSON contract for diffing, archiving, and tooling
 - It exits before backend loading, OpenAI client creation, or any network call
@@ -267,6 +293,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - final checked/emitted/strong-hit counts
   - generation settings when generation was used
   - configured stop-condition settings and final stop reason when generation was used
+  - adaptive-refill settings and final effective batch size when generation was used
   - underfilled-batch totals when generation was used
   - generation token totals and estimated cost when usage data was available
   - aggregated generation diagnostics and rejection categories
@@ -535,6 +562,23 @@ go run ./cmd/domain-finder \
   -generate-max-stall-batches 8
 ```
 
+Adaptive refill for sparse late-run search:
+
+```sh
+export OPENAI_API_KEY=your-key-here
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -backend file \
+  -interactive \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -generate "industrial infrastructure names" \
+  -generate-count 200 \
+  -generate-adaptive-refill \
+  -generate-min-batch-size 2 \
+  -generate-max-stall-batches 8
+```
+
 Dry-run prompt inspection without spending API calls:
 
 ```sh
@@ -548,6 +592,8 @@ go run ./cmd/domain-finder \
   -generate-max-syllables 3 \
   -generate-prefix dev \
   -generate-suffix io \
+  -generate-adaptive-refill \
+  -generate-min-batch-size 2 \
   -generate-max-cost-usd 1.00 \
   -generate-target-strong-hits 25 \
   -generate-max-stall-batches 8
@@ -576,6 +622,7 @@ Typical operator feedback during generation:
 
 - `generation: batch 1 attempt 1 requesting 3 stems`
 - `generation: batch 1 attempt 1 accepted 2, invalid 1, banned 0, quality_rejected 1, duplicates 0, need 1 more | strong 1/25 | stall 0/8 | cost $0.03/1.00`
+- `generation: batch 9 attempt 1 requesting 2 stems | batch_size 8->2`
 - `generation diagnostics`
 - `  banned_prefix: 3`
 - `  banned_suffix: 4`
@@ -596,6 +643,8 @@ Example generation tuning in YAML:
 generate:
   count: 20
   batch_size: 10
+  adaptive_refill: true
+  min_batch_size: 2
   max_attempts: 3
   retry_count: 2
   max_cost_usd: 1.00

@@ -27,6 +27,8 @@ type PromptInput struct {
 	MaxCostUSD       float64
 	TargetStrongHits int
 	MaxStallBatches  int
+	AdaptiveRefill   bool
+	MinBatchSize     int
 }
 
 // PromptBuilder constructs disciplined generation instructions.
@@ -53,6 +55,8 @@ type Contract struct {
 	MaxCostUSD          float64
 	TargetStrongHits    int
 	MaxStallBatches     int
+	AdaptiveRefill      bool
+	MinBatchSize        int
 	SystemPrompt        string
 	UserPrompt          string
 }
@@ -73,6 +77,8 @@ func NewPromptInput(theme string, generate config.GenerateConfig) PromptInput {
 		MaxCostUSD:       generate.MaxCostUSD,
 		TargetStrongHits: generate.TargetStrongHits,
 		MaxStallBatches:  generate.MaxStallBatches,
+		AdaptiveRefill:   generate.AdaptiveRefill,
+		MinBatchSize:     generate.MinBatchSize,
 	}
 }
 
@@ -99,6 +105,8 @@ func (b PromptBuilder) BuildContract(cfg config.Config, theme string) Contract {
 		MaxCostUSD:          input.MaxCostUSD,
 		TargetStrongHits:    input.TargetStrongHits,
 		MaxStallBatches:     input.MaxStallBatches,
+		AdaptiveRefill:      input.AdaptiveRefill,
+		MinBatchSize:        input.MinBatchSize,
 		SystemPrompt:        systemPrompt,
 		UserPrompt:          b.BuildUserPrompt(input, cfg.Generate.Count),
 	}
@@ -152,6 +160,9 @@ func (PromptBuilder) BuildUserPrompt(input PromptInput, count int) string {
 	if input.MaxStallBatches > 0 {
 		lines = append(lines, fmt.Sprintf("Run policy: generation may stop after %d consecutive stall batches with no accepted stems and no strong-hit progress.", input.MaxStallBatches))
 	}
+	if input.AdaptiveRefill {
+		lines = append(lines, fmt.Sprintf("Run policy: adaptive refill may shrink the effective batch size after repeated underfilled batches, but never below %d.", max(1, input.MinBatchSize)))
+	}
 	lines = append(lines, "Do not include bullets, numbering, commentary, or duplicate stems.")
 	return strings.Join(lines, "\n")
 }
@@ -178,6 +189,8 @@ func RenderContract(contract Contract) string {
 	fmt.Fprintf(&out, "  max_cost_usd: %s\n", renderOptionalFloat(contract.MaxCostUSD))
 	fmt.Fprintf(&out, "  target_strong_hits: %s\n", renderOptionalInt(contract.TargetStrongHits))
 	fmt.Fprintf(&out, "  max_stall_batches: %s\n", renderOptionalInt(contract.MaxStallBatches))
+	fmt.Fprintf(&out, "  adaptive_refill: %t\n", contract.AdaptiveRefill)
+	fmt.Fprintf(&out, "  min_batch_size: %s\n", renderOptionalInt(contract.MinBatchSize))
 	fmt.Fprintf(&out, "\n")
 	fmt.Fprintf(&out, "system prompt\n")
 	fmt.Fprintf(&out, "%s\n", contract.SystemPrompt)
@@ -201,6 +214,8 @@ func RenderContractJSON(contract Contract) ([]byte, error) {
 		MaxCostUSD       float64  `json:"max_cost_usd,omitempty"`
 		TargetStrongHits int      `json:"target_strong_hits,omitempty"`
 		MaxStallBatches  int      `json:"max_stall_batches,omitempty"`
+		AdaptiveRefill   bool     `json:"adaptive_refill,omitempty"`
+		MinBatchSize     int      `json:"min_batch_size,omitempty"`
 	}
 	type view struct {
 		Model          string      `json:"model"`
@@ -236,6 +251,8 @@ func RenderContractJSON(contract Contract) ([]byte, error) {
 			MaxCostUSD:       contract.MaxCostUSD,
 			TargetStrongHits: contract.TargetStrongHits,
 			MaxStallBatches:  contract.MaxStallBatches,
+			AdaptiveRefill:   contract.AdaptiveRefill,
+			MinBatchSize:     contract.MinBatchSize,
 		},
 		SystemPrompt: contract.SystemPrompt,
 		UserPrompt:   contract.UserPrompt,

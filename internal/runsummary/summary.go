@@ -23,29 +23,32 @@ type Artifact struct {
 }
 
 type Generation struct {
-	Model              string   `json:"model"`
-	Prompt             string   `json:"prompt"`
-	Style              string   `json:"style,omitempty"`
-	GenerateCount      int      `json:"generate_count"`
-	BatchSize          int      `json:"batch_size"`
-	MaxAttempts        int      `json:"max_attempts"`
-	RetryCount         int      `json:"retry_count"`
-	QualityProfile     string   `json:"quality_profile,omitempty"`
-	AvoidSubstrings    []string `json:"avoid_substrings,omitempty"`
-	AvoidPrefixes      []string `json:"avoid_prefixes,omitempty"`
-	AvoidSuffixes      []string `json:"avoid_suffixes,omitempty"`
-	MaxCostUSD         float64  `json:"max_cost_usd,omitempty"`
-	TargetStrongHits   int      `json:"target_strong_hits,omitempty"`
-	MaxStallBatches    int      `json:"max_stall_batches,omitempty"`
-	AcceptedCount      int      `json:"accepted_count"`
-	UnderfilledBatches int      `json:"underfilled_batches,omitempty"`
-	UnderfilledStems   int      `json:"underfilled_stems,omitempty"`
-	StopReason         string   `json:"stop_reason,omitempty"`
-	InputTokens        int      `json:"input_tokens,omitempty"`
-	OutputTokens       int      `json:"output_tokens,omitempty"`
-	CachedInputTokens  int      `json:"cached_input_tokens,omitempty"`
-	PricingAvailable   bool     `json:"pricing_available"`
-	EstimatedCostUSD   float64  `json:"estimated_cost_usd,omitempty"`
+	Model                   string   `json:"model"`
+	Prompt                  string   `json:"prompt"`
+	Style                   string   `json:"style,omitempty"`
+	GenerateCount           int      `json:"generate_count"`
+	BatchSize               int      `json:"batch_size"`
+	AdaptiveRefill          bool     `json:"adaptive_refill,omitempty"`
+	MinBatchSize            int      `json:"min_batch_size,omitempty"`
+	FinalEffectiveBatchSize int      `json:"final_effective_batch_size,omitempty"`
+	MaxAttempts             int      `json:"max_attempts"`
+	RetryCount              int      `json:"retry_count"`
+	QualityProfile          string   `json:"quality_profile,omitempty"`
+	AvoidSubstrings         []string `json:"avoid_substrings,omitempty"`
+	AvoidPrefixes           []string `json:"avoid_prefixes,omitempty"`
+	AvoidSuffixes           []string `json:"avoid_suffixes,omitempty"`
+	MaxCostUSD              float64  `json:"max_cost_usd,omitempty"`
+	TargetStrongHits        int      `json:"target_strong_hits,omitempty"`
+	MaxStallBatches         int      `json:"max_stall_batches,omitempty"`
+	AcceptedCount           int      `json:"accepted_count"`
+	UnderfilledBatches      int      `json:"underfilled_batches,omitempty"`
+	UnderfilledStems        int      `json:"underfilled_stems,omitempty"`
+	StopReason              string   `json:"stop_reason,omitempty"`
+	InputTokens             int      `json:"input_tokens,omitempty"`
+	OutputTokens            int      `json:"output_tokens,omitempty"`
+	CachedInputTokens       int      `json:"cached_input_tokens,omitempty"`
+	PricingAvailable        bool     `json:"pricing_available"`
+	EstimatedCostUSD        float64  `json:"estimated_cost_usd,omitempty"`
 }
 
 type Diagnostics struct {

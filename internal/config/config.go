@@ -29,6 +29,8 @@ type OpenAIConfig struct {
 type GenerateConfig struct {
 	Count               int
 	BatchSize           int
+	AdaptiveRefill      bool
+	MinBatchSize        int
 	MaxAttemptsPerBatch int
 	RetryCount          int
 	QualityProfile      string
@@ -54,6 +56,8 @@ type CLIOverrides struct {
 	OpenAIModel              string
 	GenerateCount            int
 	GenerateBatchSize        int
+	GenerateAdaptiveRefill   bool
+	GenerateMinBatchSize     int
 	GenerateQualityProfile   string
 	GenerateMaxLength        int
 	GenerateMaxSyllables     int
@@ -74,6 +78,8 @@ type fileConfig struct {
 	OpenAIModel              string
 	GenerateCount            int
 	GenerateBatchSize        int
+	GenerateAdaptiveRefill   bool
+	GenerateMinBatchSize     int
 	GenerateMaxAttempts      int
 	GenerateRetryCount       int
 	GenerateQualityProfile   string
@@ -101,6 +107,7 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 		Generate: GenerateConfig{
 			Count:               20,
 			BatchSize:           10,
+			MinBatchSize:        2,
 			MaxAttemptsPerBatch: 3,
 			RetryCount:          2,
 			QualityProfile:      "industrial",
@@ -144,6 +151,20 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_BATCH_SIZE: %w", err)
 		}
 		cfg.Generate.BatchSize = parsed
+	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_ADAPTIVE_REFILL"); ok && value != "" {
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_ADAPTIVE_REFILL: %w", err)
+		}
+		cfg.Generate.AdaptiveRefill = parsed
+	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_MIN_BATCH_SIZE"); ok && value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_MIN_BATCH_SIZE: %w", err)
+		}
+		cfg.Generate.MinBatchSize = parsed
 	}
 	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_MAX_ATTEMPTS"); ok && value != "" {
 		parsed, err := strconv.Atoi(value)
@@ -225,6 +246,12 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	if cli.GenerateBatchSize > 0 {
 		cfg.Generate.BatchSize = cli.GenerateBatchSize
 	}
+	if cli.GenerateAdaptiveRefill {
+		cfg.Generate.AdaptiveRefill = true
+	}
+	if cli.GenerateMinBatchSize > 0 {
+		cfg.Generate.MinBatchSize = cli.GenerateMinBatchSize
+	}
 	if cli.GenerateQualityProfile != "" {
 		cfg.Generate.QualityProfile = strings.TrimSpace(cli.GenerateQualityProfile)
 	}
@@ -280,6 +307,12 @@ func applyFileConfig(cfg *Config, fc fileConfig) {
 	}
 	if fc.GenerateBatchSize > 0 {
 		cfg.Generate.BatchSize = fc.GenerateBatchSize
+	}
+	if fc.GenerateAdaptiveRefill {
+		cfg.Generate.AdaptiveRefill = true
+	}
+	if fc.GenerateMinBatchSize > 0 {
+		cfg.Generate.MinBatchSize = fc.GenerateMinBatchSize
 	}
 	if fc.GenerateMaxAttempts > 0 {
 		cfg.Generate.MaxAttemptsPerBatch = fc.GenerateMaxAttempts
@@ -378,6 +411,18 @@ func loadFile(path string) (fileConfig, error) {
 				return fileConfig{}, fmt.Errorf("parse %s generate.batch_size: %w", path, err)
 			}
 			cfg.GenerateBatchSize = parsed
+		case "generate.adaptive_refill":
+			parsed, err := strconv.ParseBool(value)
+			if err != nil {
+				return fileConfig{}, fmt.Errorf("parse %s generate.adaptive_refill: %w", path, err)
+			}
+			cfg.GenerateAdaptiveRefill = parsed
+		case "generate.min_batch_size":
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return fileConfig{}, fmt.Errorf("parse %s generate.min_batch_size: %w", path, err)
+			}
+			cfg.GenerateMinBatchSize = parsed
 		case "generate.max_attempts":
 			parsed, err := strconv.Atoi(value)
 			if err != nil {

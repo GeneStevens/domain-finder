@@ -64,6 +64,8 @@ func IsQuality(err error) bool {
 // Policy controls bounded generation fulfillment.
 type Policy struct {
 	BatchSize           int
+	AdaptiveRefill      bool
+	MinBatchSize        int
 	MaxAttemptsPerBatch int
 	RetryCount          int
 	RetryBackoff        time.Duration
@@ -73,6 +75,8 @@ type Policy struct {
 func PolicyFromConfig(cfg config.GenerateConfig) Policy {
 	return Policy{
 		BatchSize:           cfg.BatchSize,
+		AdaptiveRefill:      cfg.AdaptiveRefill,
+		MinBatchSize:        cfg.MinBatchSize,
 		MaxAttemptsPerBatch: cfg.MaxAttemptsPerBatch,
 		RetryCount:          cfg.RetryCount,
 		RetryBackoff:        defaultRetryBackoff,
@@ -91,27 +95,29 @@ const (
 
 // Event reports concise batch-generation progress.
 type Event struct {
-	Type             EventType
-	Batch            int
-	Attempt          int
-	Requested        int
-	Accepted         int
-	Invalid          int
-	Banned           int
-	QualityRejected  int
-	Duplicates       int
-	RemainingBatch   int
-	RemainingTotal   int
-	Retry            int
-	RetryCount       int
-	Usage            *Usage
-	LastEstimate     UsageEstimate
-	Totals           UsageTotals
-	Underfilled      int
-	UnderfillBatches int
-	UnderfillStems   int
-	Stop             StopSnapshot
-	Err              error
+	Type               EventType
+	Batch              int
+	Attempt            int
+	BaseBatchSize      int
+	EffectiveBatchSize int
+	Requested          int
+	Accepted           int
+	Invalid            int
+	Banned             int
+	QualityRejected    int
+	Duplicates         int
+	RemainingBatch     int
+	RemainingTotal     int
+	Retry              int
+	RetryCount         int
+	Usage              *Usage
+	LastEstimate       UsageEstimate
+	Totals             UsageTotals
+	Underfilled        int
+	UnderfillBatches   int
+	UnderfillStems     int
+	Stop               StopSnapshot
+	Err                error
 }
 
 // FulfillmentError reports that bounded generation could not satisfy the request.
@@ -143,8 +149,11 @@ type Fulfiller struct {
 }
 
 type UnderfillTotals struct {
-	Batches int
-	Stems   int
+	Batches                 int
+	Stems                   int
+	AdaptiveRefillEnabled   bool
+	MinBatchSize            int
+	FinalEffectiveBatchSize int
 }
 
 type modelNamer interface {
@@ -179,24 +188,36 @@ func (f *Fulfiller) Fulfill(ctx context.Context, prompt string, totalRequested i
 	}
 	totalAccepted := 0
 	batchNumber := 0
+	refillController := NewAdaptiveRefillController(max(1, f.Policy.BatchSize), AdaptiveRefillPolicy{
+		Enabled:      f.Policy.AdaptiveRefill,
+		MinBatchSize: f.Policy.MinBatchSize,
+	})
+	underfills.AdaptiveRefillEnabled = refillController.Snapshot().Enabled
+	underfills.MinBatchSize = refillController.Snapshot().MinBatchSize
 
 	for remainingTotal := totalRequested; remainingTotal > 0; {
 		batchNumber++
-		target := remainingTotal
-		if f.Policy.BatchSize > 0 && f.Policy.BatchSize < target {
-			target = f.Policy.BatchSize
+		snapshot := refillController.Snapshot()
+		target := refillController.NextBatchSize(remainingTotal)
+		baseBatchSize := 0
+		effectiveBatchSize := 0
+		if snapshot.Enabled {
+			baseBatchSize = snapshot.BaseBatchSize
+			effectiveBatchSize = snapshot.EffectiveBatchSize
 		}
 		batchAccepted := 0
 
 		for attempt := 1; attempt <= max(1, f.Policy.MaxAttemptsPerBatch) && batchAccepted < target; attempt++ {
 			need := target - batchAccepted
 			if err := notifyEvent(notify, Event{
-				Type:           EventBatchRequest,
-				Batch:          batchNumber,
-				Attempt:        attempt,
-				Requested:      need,
-				RemainingBatch: need,
-				RemainingTotal: remainingTotal,
+				Type:               EventBatchRequest,
+				Batch:              batchNumber,
+				Attempt:            attempt,
+				BaseBatchSize:      baseBatchSize,
+				EffectiveBatchSize: effectiveBatchSize,
+				Requested:          need,
+				RemainingBatch:     need,
+				RemainingTotal:     remainingTotal,
 			}); err != nil {
 				return totals, underfills, nil, err
 			}
@@ -247,23 +268,25 @@ func (f *Fulfiller) Fulfill(ctx context.Context, prompt string, totalRequested i
 			lastEstimate := totals.AddCall(f.GeneratorModel(), batchResult.Usage)
 
 			if err := notifyEvent(notify, Event{
-				Type:             EventBatchResult,
-				Batch:            batchNumber,
-				Attempt:          attempt,
-				Requested:        need,
-				Accepted:         len(report.Accepted),
-				Invalid:          report.Invalid,
-				Banned:           report.LexicalRejected,
-				QualityRejected:  report.QualityRejected,
-				Duplicates:       report.Duplicates,
-				Usage:            batchResult.Usage,
-				LastEstimate:     lastEstimate,
-				Totals:           totals,
-				Underfilled:      0,
-				UnderfillBatches: underfills.Batches,
-				UnderfillStems:   underfills.Stems,
-				RemainingBatch:   target - batchAccepted,
-				RemainingTotal:   remainingTotal,
+				Type:               EventBatchResult,
+				Batch:              batchNumber,
+				Attempt:            attempt,
+				BaseBatchSize:      baseBatchSize,
+				EffectiveBatchSize: effectiveBatchSize,
+				Requested:          need,
+				Accepted:           len(report.Accepted),
+				Invalid:            report.Invalid,
+				Banned:             report.LexicalRejected,
+				QualityRejected:    report.QualityRejected,
+				Duplicates:         report.Duplicates,
+				Usage:              batchResult.Usage,
+				LastEstimate:       lastEstimate,
+				Totals:             totals,
+				Underfilled:        0,
+				UnderfillBatches:   underfills.Batches,
+				UnderfillStems:     underfills.Stems,
+				RemainingBatch:     target - batchAccepted,
+				RemainingTotal:     remainingTotal,
 			}); err != nil {
 				return totals, underfills, nil, err
 			}
@@ -275,23 +298,33 @@ func (f *Fulfiller) Fulfill(ctx context.Context, prompt string, totalRequested i
 			}
 		}
 
+		snapshot = refillController.ObserveBatch(target, batchAccepted)
+		underfills.FinalEffectiveBatchSize = snapshot.EffectiveBatchSize
 		if batchAccepted < target {
+			baseBatchSize = 0
+			effectiveBatchSize = 0
+			if snapshot.Enabled {
+				baseBatchSize = snapshot.BaseBatchSize
+				effectiveBatchSize = snapshot.EffectiveBatchSize
+			}
 			underfilled := target - batchAccepted
 			underfills.Batches++
 			underfills.Stems += underfilled
 			remainingTotal = totalRequested - totalAccepted
 			if err := notifyEvent(notify, Event{
-				Type:             EventBatchResult,
-				Batch:            batchNumber,
-				Attempt:          max(1, f.Policy.MaxAttemptsPerBatch),
-				Requested:        target,
-				Accepted:         0,
-				RemainingBatch:   underfilled,
-				RemainingTotal:   remainingTotal,
-				Totals:           totals,
-				Underfilled:      underfilled,
-				UnderfillBatches: underfills.Batches,
-				UnderfillStems:   underfills.Stems,
+				Type:               EventBatchResult,
+				Batch:              batchNumber,
+				Attempt:            max(1, f.Policy.MaxAttemptsPerBatch),
+				BaseBatchSize:      baseBatchSize,
+				EffectiveBatchSize: effectiveBatchSize,
+				Requested:          target,
+				Accepted:           0,
+				RemainingBatch:     underfilled,
+				RemainingTotal:     remainingTotal,
+				Totals:             totals,
+				Underfilled:        underfilled,
+				UnderfillBatches:   underfills.Batches,
+				UnderfillStems:     underfills.Stems,
 			}); err != nil {
 				return totals, underfills, nil, err
 			}
@@ -301,6 +334,9 @@ func (f *Fulfiller) Fulfill(ctx context.Context, prompt string, totalRequested i
 		}
 	}
 
+	if underfills.FinalEffectiveBatchSize == 0 {
+		underfills.FinalEffectiveBatchSize = refillController.Snapshot().EffectiveBatchSize
+	}
 	return totals, underfills, nil, notifyEvent(notify, Event{Type: EventComplete, Accepted: totalAccepted, Totals: totals, UnderfillBatches: underfills.Batches, UnderfillStems: underfills.Stems})
 }
 
