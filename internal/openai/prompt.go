@@ -13,12 +13,13 @@ const systemPrompt = "You generate candidate domain stems. Return JSON only. Pro
 // PromptInput describes one generation request before it is turned into the
 // final OpenAI instruction payload.
 type PromptInput struct {
-	Theme        string
-	Style        string
-	MaxLength    int
-	MaxSyllables int
-	Prefix       string
-	Suffix       string
+	Theme           string
+	Style           string
+	MaxLength       int
+	MaxSyllables    int
+	Prefix          string
+	Suffix          string
+	AvoidSubstrings []string
 }
 
 // PromptBuilder constructs disciplined generation instructions.
@@ -38,6 +39,7 @@ type Contract struct {
 	MaxSyllables        int
 	Prefix              string
 	Suffix              string
+	AvoidSubstrings     []string
 	SystemPrompt        string
 	UserPrompt          string
 }
@@ -45,12 +47,13 @@ type Contract struct {
 // NewPromptInput builds a prompt input from resolved config and the CLI theme.
 func NewPromptInput(theme string, generate config.GenerateConfig) PromptInput {
 	return PromptInput{
-		Theme:        strings.TrimSpace(theme),
-		Style:        strings.TrimSpace(generate.Style),
-		MaxLength:    generate.MaxLength,
-		MaxSyllables: generate.MaxSyllables,
-		Prefix:       strings.TrimSpace(generate.Prefix),
-		Suffix:       strings.TrimSpace(generate.Suffix),
+		Theme:           strings.TrimSpace(theme),
+		Style:           strings.TrimSpace(generate.Style),
+		MaxLength:       generate.MaxLength,
+		MaxSyllables:    generate.MaxSyllables,
+		Prefix:          strings.TrimSpace(generate.Prefix),
+		Suffix:          strings.TrimSpace(generate.Suffix),
+		AvoidSubstrings: append([]string(nil), generate.AvoidSubstrings...),
 	}
 }
 
@@ -70,6 +73,7 @@ func (b PromptBuilder) BuildContract(cfg config.Config, theme string) Contract {
 		MaxSyllables:        input.MaxSyllables,
 		Prefix:              input.Prefix,
 		Suffix:              input.Suffix,
+		AvoidSubstrings:     append([]string(nil), input.AvoidSubstrings...),
 		SystemPrompt:        systemPrompt,
 		UserPrompt:          b.BuildUserPrompt(input, cfg.Generate.Count),
 	}
@@ -101,6 +105,9 @@ func (PromptBuilder) BuildUserPrompt(input PromptInput, count int) string {
 	if input.Suffix != "" {
 		lines = append(lines, fmt.Sprintf("Constraint: prefer stems that end with `%s`.", input.Suffix))
 	}
+	if len(input.AvoidSubstrings) > 0 {
+		lines = append(lines, fmt.Sprintf("Hard constraint: do not return stems containing any of these substrings: %s.", formatQuotedList(input.AvoidSubstrings)))
+	}
 	lines = append(lines, "Do not include bullets, numbering, commentary, or duplicate stems.")
 	return strings.Join(lines, "\n")
 }
@@ -120,6 +127,7 @@ func RenderContract(contract Contract) string {
 	fmt.Fprintf(&out, "  max_syllables: %s\n", renderOptionalInt(contract.MaxSyllables))
 	fmt.Fprintf(&out, "  prefix: %s\n", renderOptional(contract.Prefix))
 	fmt.Fprintf(&out, "  suffix: %s\n", renderOptional(contract.Suffix))
+	fmt.Fprintf(&out, "  avoid_substrings: %s\n", renderOptionalList(contract.AvoidSubstrings))
 	fmt.Fprintf(&out, "\n")
 	fmt.Fprintf(&out, "system prompt\n")
 	fmt.Fprintf(&out, "%s\n", contract.SystemPrompt)
@@ -133,10 +141,11 @@ func RenderContract(contract Contract) string {
 // the fully resolved generation contract.
 func RenderContractJSON(contract Contract) ([]byte, error) {
 	type constraints struct {
-		MaxLength    int    `json:"max_length,omitempty"`
-		MaxSyllables int    `json:"max_syllables,omitempty"`
-		Prefix       string `json:"prefix,omitempty"`
-		Suffix       string `json:"suffix,omitempty"`
+		MaxLength       int      `json:"max_length,omitempty"`
+		MaxSyllables    int      `json:"max_syllables,omitempty"`
+		Prefix          string   `json:"prefix,omitempty"`
+		Suffix          string   `json:"suffix,omitempty"`
+		AvoidSubstrings []string `json:"avoid_substrings,omitempty"`
 	}
 	type view struct {
 		Model         string      `json:"model"`
@@ -160,16 +169,32 @@ func RenderContractJSON(contract Contract) ([]byte, error) {
 		Theme:         contract.Theme,
 		Style:         contract.Style,
 		Constraints: constraints{
-			MaxLength:    contract.MaxLength,
-			MaxSyllables: contract.MaxSyllables,
-			Prefix:       contract.Prefix,
-			Suffix:       contract.Suffix,
+			MaxLength:       contract.MaxLength,
+			MaxSyllables:    contract.MaxSyllables,
+			Prefix:          contract.Prefix,
+			Suffix:          contract.Suffix,
+			AvoidSubstrings: append([]string(nil), contract.AvoidSubstrings...),
 		},
 		SystemPrompt: contract.SystemPrompt,
 		UserPrompt:   contract.UserPrompt,
 	}
 
 	return json.MarshalIndent(payload, "", "  ")
+}
+
+func renderOptionalList(values []string) string {
+	if len(values) == 0 {
+		return "(none)"
+	}
+	return strings.Join(values, ", ")
+}
+
+func formatQuotedList(values []string) string {
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		quoted = append(quoted, fmt.Sprintf("`%s`", value))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 func renderOptional(value string) string {

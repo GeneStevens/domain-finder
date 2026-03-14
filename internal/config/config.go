@@ -36,6 +36,7 @@ type GenerateConfig struct {
 	Suffix              string
 	Prefix              string
 	Style               string
+	AvoidSubstrings     []string
 }
 
 type PostgresConfig struct {
@@ -44,30 +45,32 @@ type PostgresConfig struct {
 
 // CLIOverrides are the CLI-provided config overrides.
 type CLIOverrides struct {
-	OpenAIModel          string
-	GenerateCount        int
-	GenerateBatchSize    int
-	GenerateMaxLength    int
-	GenerateMaxSyllables int
-	GenerateSuffix       string
-	GeneratePrefix       string
-	GenerateStyle        string
-	PostgresDSN          string
+	OpenAIModel             string
+	GenerateCount           int
+	GenerateBatchSize       int
+	GenerateMaxLength       int
+	GenerateMaxSyllables    int
+	GenerateSuffix          string
+	GeneratePrefix          string
+	GenerateStyle           string
+	GenerateAvoidSubstrings string
+	PostgresDSN             string
 }
 
 type fileConfig struct {
-	OpenAIAPIKey         string
-	OpenAIModel          string
-	GenerateCount        int
-	GenerateBatchSize    int
-	GenerateMaxAttempts  int
-	GenerateRetryCount   int
-	GenerateMaxLength    int
-	GenerateMaxSyllables int
-	GenerateSuffix       string
-	GeneratePrefix       string
-	GenerateStyle        string
-	PostgresDSN          string
+	OpenAIAPIKey            string
+	OpenAIModel             string
+	GenerateCount           int
+	GenerateBatchSize       int
+	GenerateMaxAttempts     int
+	GenerateRetryCount      int
+	GenerateMaxLength       int
+	GenerateMaxSyllables    int
+	GenerateSuffix          string
+	GeneratePrefix          string
+	GenerateStyle           string
+	GenerateAvoidSubstrings string
+	PostgresDSN             string
 }
 
 // Load resolves configuration using precedence:
@@ -160,6 +163,9 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_STYLE"); ok && value != "" {
 		cfg.Generate.Style = value
 	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_AVOID_SUBSTRINGS"); ok && value != "" {
+		cfg.Generate.AvoidSubstrings = parseCSVList(value)
+	}
 
 	if cli.OpenAIModel != "" {
 		cfg.OpenAI.Model = cli.OpenAIModel
@@ -184,6 +190,9 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	}
 	if cli.GenerateStyle != "" {
 		cfg.Generate.Style = cli.GenerateStyle
+	}
+	if cli.GenerateAvoidSubstrings != "" {
+		cfg.Generate.AvoidSubstrings = parseCSVList(cli.GenerateAvoidSubstrings)
 	}
 	if cli.PostgresDSN != "" {
 		cfg.Postgres.DSN = cli.PostgresDSN
@@ -225,6 +234,9 @@ func applyFileConfig(cfg *Config, fc fileConfig) {
 	}
 	if fc.GenerateStyle != "" {
 		cfg.Generate.Style = fc.GenerateStyle
+	}
+	if fc.GenerateAvoidSubstrings != "" {
+		cfg.Generate.AvoidSubstrings = parseCSVList(fc.GenerateAvoidSubstrings)
 	}
 	if fc.PostgresDSN != "" {
 		cfg.Postgres.DSN = fc.PostgresDSN
@@ -311,6 +323,8 @@ func loadFile(path string) (fileConfig, error) {
 			cfg.GeneratePrefix = value
 		case "generate.style":
 			cfg.GenerateStyle = value
+		case "generate.avoid_substrings":
+			cfg.GenerateAvoidSubstrings = value
 		case "postgres.dsn":
 			cfg.PostgresDSN = value
 		default:
@@ -321,4 +335,22 @@ func loadFile(path string) (fileConfig, error) {
 		return fileConfig{}, fmt.Errorf("read config %q: %w", path, err)
 	}
 	return cfg, nil
+}
+
+func parseCSVList(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		normalized := strings.TrimSpace(strings.ToLower(part))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out
 }

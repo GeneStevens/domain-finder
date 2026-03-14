@@ -1,5 +1,7 @@
 package candidates
 
+import "strings"
+
 // Collector incrementally normalizes and deduplicates candidate stems while
 // preserving first-seen order.
 type Collector struct {
@@ -8,9 +10,16 @@ type Collector struct {
 
 // BatchReport describes one tolerant candidate-ingest pass.
 type BatchReport struct {
-	Accepted   []string
-	Invalid    int
-	Duplicates int
+	Accepted        []string
+	Invalid         int
+	Duplicates      int
+	LexicalRejected int
+}
+
+// GeneratedPolicy defines generation-specific acceptance rules applied after
+// normal stem validation.
+type GeneratedPolicy struct {
+	AvoidSubstrings []string
 }
 
 // NewCollector creates an empty collector.
@@ -55,6 +64,12 @@ func (c *Collector) AddAllReport(raws []string) BatchReport {
 // AddAllReportLimited behaves like AddAllReport but caps new accepted stems at
 // the provided limit so bounded generation can avoid overshooting requested work.
 func (c *Collector) AddAllReportLimited(raws []string, limit int) BatchReport {
+	return c.AddGeneratedReportLimited(raws, limit, GeneratedPolicy{})
+}
+
+// AddGeneratedReportLimited applies generation-specific quality rules without
+// changing the normal validation behavior for manual candidate sources.
+func (c *Collector) AddGeneratedReportLimited(raws []string, limit int, policy GeneratedPolicy) BatchReport {
 	report := BatchReport{
 		Accepted: make([]string, 0, len(raws)),
 	}
@@ -65,6 +80,10 @@ func (c *Collector) AddAllReportLimited(raws []string, limit int) BatchReport {
 		normalized, err := NormalizeCandidate(raw)
 		if err != nil {
 			report.Invalid++
+			continue
+		}
+		if containsAvoidSubstring(normalized, policy.AvoidSubstrings) {
+			report.LexicalRejected++
 			continue
 		}
 		if _, ok := c.seen[normalized]; ok {
@@ -79,4 +98,16 @@ func (c *Collector) AddAllReportLimited(raws []string, limit int) BatchReport {
 		report.Accepted = append(report.Accepted, normalized)
 	}
 	return report
+}
+
+func containsAvoidSubstring(value string, banned []string) bool {
+	for _, fragment := range banned {
+		if fragment == "" {
+			continue
+		}
+		if strings.Contains(value, fragment) {
+			return true
+		}
+	}
+	return false
 }

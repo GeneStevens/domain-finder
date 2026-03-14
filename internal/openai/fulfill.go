@@ -98,6 +98,7 @@ type Event struct {
 	Accepted       int
 	Invalid        int
 	Duplicates     int
+	Rejected       int
 	RemainingBatch int
 	RemainingTotal int
 	Retry          int
@@ -229,6 +230,7 @@ func (f *Fulfiller) Fulfill(ctx context.Context, prompt string, totalRequested i
 				Accepted:       len(report.Accepted),
 				Invalid:        report.Invalid,
 				Duplicates:     report.Duplicates,
+				Rejected:       report.LexicalRejected,
 				RemainingBatch: target - batchAccepted,
 				RemainingTotal: remainingTotal,
 			}); err != nil {

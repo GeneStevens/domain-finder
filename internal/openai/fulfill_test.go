@@ -157,3 +157,42 @@ func TestFulfillUndersizedUsableBatchFailsWhenBudgetExhausted(t *testing.T) {
 		t.Fatalf("FulfillmentError = %#v, want accepted 1 requested 2", fulfillmentErr)
 	}
 }
+
+func TestFulfillBannedSubstringsAreRejected(t *testing.T) {
+	generator := &scriptedGenerator{
+		responses: []scriptedResponse{
+			{stems: []string{"devspark", "noviq", "cloudbase"}},
+			{stems: []string{"trynex"}},
+		},
+	}
+	collector := candidates.NewCollector()
+	fulfiller := NewFulfiller(generator, config.GenerateConfig{
+		BatchSize:           2,
+		MaxAttemptsPerBatch: 2,
+		RetryCount:          0,
+		AvoidSubstrings:     []string{"dev", "cloud"},
+	})
+	fulfiller.Sleep = func(context.Context, time.Duration) error { return nil }
+
+	var accepted []string
+	var events []Event
+	err := fulfiller.Fulfill(context.Background(), "short brand stems", 2, func(raw []string, limit int) (candidates.BatchReport, error) {
+		report := collector.AddGeneratedReportLimited(raw, limit, candidates.GeneratedPolicy{
+			AvoidSubstrings: []string{"dev", "cloud"},
+		})
+		accepted = append(accepted, report.Accepted...)
+		return report, nil
+	}, func(event Event) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Fulfill() error = %v", err)
+	}
+	if !reflect.DeepEqual(accepted, []string{"noviq", "trynex"}) {
+		t.Fatalf("accepted = %#v, want [noviq trynex]", accepted)
+	}
+	if len(events) < 3 || events[1].Rejected != 2 {
+		t.Fatalf("events = %#v, want lexical rejection accounting", events)
+	}
+}

@@ -11,12 +11,13 @@ import (
 func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 	builder := PromptBuilder{}
 	got := builder.BuildUserPrompt(PromptInput{
-		Theme:        "invented product names",
-		Style:        "developer tool",
-		MaxLength:    12,
-		MaxSyllables: 3,
-		Prefix:       "dev",
-		Suffix:       "io",
+		Theme:           "invented product names",
+		Style:           "developer tool",
+		MaxLength:       12,
+		MaxSyllables:    3,
+		Prefix:          "dev",
+		Suffix:          "io",
+		AvoidSubstrings: []string{"stack", "cloud"},
 	}, 25)
 
 	wantFragments := []string{
@@ -27,6 +28,9 @@ func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 		"no more than 3 syllables",
 		"start with `dev`",
 		"end with `io`",
+		"do not return stems containing any of these substrings",
+		"`stack`",
+		"`cloud`",
 		"Do not include bullets, numbering, commentary, or duplicate stems.",
 	}
 	for _, fragment := range wantFragments {
@@ -38,14 +42,15 @@ func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 
 func TestNewPromptInputFromConfig(t *testing.T) {
 	got := NewPromptInput("security names", config.GenerateConfig{
-		Style:        "security product",
-		MaxLength:    10,
-		MaxSyllables: 2,
-		Prefix:       "sec",
-		Suffix:       "ix",
+		Style:           "security product",
+		MaxLength:       10,
+		MaxSyllables:    2,
+		Prefix:          "sec",
+		Suffix:          "ix",
+		AvoidSubstrings: []string{"dev", "cloud"},
 	})
 
-	if got.Theme != "security names" || got.Style != "security product" || got.MaxLength != 10 || got.MaxSyllables != 2 || got.Prefix != "sec" || got.Suffix != "ix" {
+	if got.Theme != "security names" || got.Style != "security product" || got.MaxLength != 10 || got.MaxSyllables != 2 || got.Prefix != "sec" || got.Suffix != "ix" || len(got.AvoidSubstrings) != 2 {
 		t.Fatalf("NewPromptInput() = %#v, want populated constraint input", got)
 	}
 }
@@ -66,6 +71,7 @@ func TestBuildContractAndRender(t *testing.T) {
 			Prefix:              "dev",
 			Suffix:              "io",
 			Style:               "developer tool",
+			AvoidSubstrings:     []string{"stack", "cloud"},
 		},
 	}, "short product name stems")
 
@@ -87,10 +93,12 @@ func TestBuildContractAndRender(t *testing.T) {
 		"max_syllables: 3",
 		"prefix: dev",
 		"suffix: io",
+		"avoid_substrings: stack, cloud",
 		"system prompt",
 		"user prompt",
 		"start with `dev`",
 		"end with `io`",
+		"`stack`",
 	}
 	for _, fragment := range wantFragments {
 		if !strings.Contains(rendered, fragment) {
@@ -115,6 +123,7 @@ func TestRenderContractJSON(t *testing.T) {
 			Prefix:              "dev",
 			Suffix:              "io",
 			Style:               "developer tool",
+			AvoidSubstrings:     []string{"stack", "cloud"},
 		},
 	}, "short product name stems")
 
@@ -146,6 +155,10 @@ func TestRenderContractJSON(t *testing.T) {
 	}
 	if constraints["max_length"] != float64(12) || constraints["prefix"] != "dev" || constraints["suffix"] != "io" {
 		t.Fatalf("constraints = %#v, want populated stable constraint object", constraints)
+	}
+	avoid := constraints["avoid_substrings"].([]any)
+	if len(avoid) != 2 || avoid[0] != "stack" || avoid[1] != "cloud" {
+		t.Fatalf("avoid_substrings = %#v, want [stack cloud]", avoid)
 	}
 	if got["system_prompt"] == "" || got["user_prompt"] == "" {
 		t.Fatalf("prompts missing in %#v", got)

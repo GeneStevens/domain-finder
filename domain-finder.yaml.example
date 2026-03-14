@@ -11,6 +11,7 @@ generate:
   retry_count: 2
   max_length: 12
   max_syllables: 3
-  prefix: dev
+  prefix: ""
   suffix: io
   style: invented SaaS
+  avoid_substrings: dev,code,stack,cloud,sync,ops,grid,craft,build,tool,lab,forge,flow

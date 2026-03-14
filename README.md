@@ -105,6 +105,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-max-syllables` prefers shorter, simpler-sounding stems
 - `-generate-prefix` prefers stems that start with specific text
 - `-generate-suffix` prefers stems that end with specific text
+- `-generate-avoid-substrings` hard-bans low-value lexical families from generated stems
 - `-generate-dry-run` prints the fully resolved generation contract and exits before any OpenAI call
 - `-generate-dry-run-format text|json` chooses human-readable or machine-readable inspection output
 - `-audit-log <path>` writes one audit JSONL record per checked stem
@@ -121,6 +122,9 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `internal/openai` now owns a dedicated prompt builder for the generation contract
 - Generated values still pass through the normal stem validation and dedupe pipeline
 - Invalid outputs such as FQDNs, spaces, punctuation, duplicates, or empty strings are still rejected after generation
+- `avoid_substrings` is stronger than prompt guidance alone:
+  - it is rendered into the prompt contract as an explicit negative rule
+  - generated stems containing banned substrings are also hard-rejected after generation
 - `-generate-dry-run` uses the same resolved config and prompt builder, but does not require an API key and does not touch the network
 
 ## Generation dry run
@@ -141,6 +145,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - stop with a clear error when the attempt budget is exhausted
 - Transient OpenAI failures such as rate limits or server errors are retried a bounded number of times
 - Poor model output such as duplicates, FQDNs, punctuation, empty values, or noisy text is treated as degraded batch quality rather than silently corrupting the candidate pipeline
+- Generated stems containing banned substrings are rejected before lookup and counted as unusable batch output
 - Interactive and text-mode generation runs emit concise stderr status lines showing batch requests, accepted/rejected counts, retries, and completion/failure
 - JSONL mode stays machine-readable and does not emit live generation progress
 
@@ -355,6 +360,26 @@ go run ./cmd/domain-finder \
   -generate-suffix io
 ```
 
+Constrained generation with hard lexical bans:
+
+```sh
+export OPENAI_API_KEY=your-key-here
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -backend file \
+  -interactive \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -generate "short product name stems" \
+  -generate-style "developer tool" \
+  -generate-count 8 \
+  -generate-batch-size 4 \
+  -generate-max-length 12 \
+  -generate-max-syllables 3 \
+  -generate-suffix io \
+  -generate-avoid-substrings "dev,code,stack,cloud,sync,ops,grid,craft,build,tool,lab,forge,flow"
+```
+
 Dry-run prompt inspection without spending API calls:
 
 ```sh
@@ -404,6 +429,7 @@ generate:
   prefix: dev
   suffix: io
   style: invented SaaS
+  avoid_substrings: dev,code,stack,cloud,sync,ops,grid,craft,build,tool,lab,forge,flow
 ```
 
 PostgreSQL backend example:

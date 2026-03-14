@@ -651,9 +651,9 @@ func TestRunTextWorkflowWithGeneratedStems(t *testing.T) {
 	progress := stderr.String()
 	wantProgress := []string{
 		"generation: batch 1 attempt 1 requesting 2 stems",
-		"generation: batch 1 attempt 1 accepted 2, invalid 0, duplicates 0, need 0 more",
+		"generation: batch 1 attempt 1 accepted 2, invalid 0, banned 0, duplicates 0, need 0 more",
 		"generation: batch 2 attempt 1 requesting 2 stems",
-		"generation: batch 2 attempt 1 accepted 2, invalid 0, duplicates 0, need 0 more",
+		"generation: batch 2 attempt 1 accepted 2, invalid 0, banned 0, duplicates 0, need 0 more",
 		"generation: complete, accepted 4 stems",
 	}
 	for _, fragment := range wantProgress {
@@ -710,9 +710,9 @@ func TestRunTextWorkflowInteractiveWithGeneratedStems(t *testing.T) {
 	wantProgress := []string{
 		"Searching 4 stems | filter: absent-in-all\n",
 		"generation: batch 1 attempt 1 requesting 2 stems",
-		"generation: batch 1 attempt 1 accepted 2, invalid 0, duplicates 0, need 0 more",
+		"generation: batch 1 attempt 1 accepted 2, invalid 0, banned 0, duplicates 0, need 0 more",
 		"generation: batch 2 attempt 1 requesting 1 stems",
-		"generation: batch 2 attempt 1 accepted 1, invalid 0, duplicates 0, need 0 more",
+		"generation: batch 2 attempt 1 accepted 1, invalid 0, banned 0, duplicates 0, need 0 more",
 		"generation: complete, accepted 3 stems",
 		"checking: missing... [1/4]",
 		"checking: brandfoo... [2/4]",
@@ -740,7 +740,8 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
 		"  suffix: ix\n" +
-		"  style: security product\n"
+		"  style: security product\n" +
+		"  avoid_substrings: dev,cloud\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -803,6 +804,9 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 	if captured.Style != "invented SaaS" {
 		t.Fatalf("captured.Style = %q, want invented SaaS from CLI", captured.Style)
 	}
+	if got := strings.Join(captured.AvoidSubstrings, ","); got != "dev,cloud" {
+		t.Fatalf("captured.AvoidSubstrings = %q, want dev,cloud from config", got)
+	}
 	if len(generator.calls) != 3 || generator.calls[0] != 2 || generator.calls[1] != 2 || generator.calls[2] != 1 {
 		t.Fatalf("generator calls = %#v, want [2 2 1]", generator.calls)
 	}
@@ -825,7 +829,8 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
 		"  suffix: ix\n" +
-		"  style: security product\n"
+		"  style: security product\n" +
+		"  avoid_substrings: dev,cloud\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -869,6 +874,7 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"max_syllables: 2",
 		"prefix: neo",
 		"suffix: ix",
+		"avoid_substrings: dev, cloud",
 		"system prompt",
 		"user prompt",
 	}
@@ -891,7 +897,8 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
 		"  suffix: ix\n" +
-		"  style: security product\n"
+		"  style: security product\n" +
+		"  avoid_substrings: dev,cloud\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -921,6 +928,7 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"-generate-prefix", "dev",
 		"-generate-suffix", "io",
 		"-generate-style", "developer tool",
+		"-generate-avoid-substrings", "stack,forge,cloud",
 	}, strings.NewReader(""), &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -936,6 +944,7 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"prefix: dev",
 		"suffix: io",
 		"style: developer tool",
+		"avoid_substrings: stack, forge, cloud",
 		"start with `dev`",
 		"end with `io`",
 	}
@@ -1081,6 +1090,51 @@ func TestRunGenerateDryRunRequiresPrompt(t *testing.T) {
 	}
 }
 
+func TestRunTextWorkflowRejectsBannedGeneratedStems(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  avoid_substrings: dev,cloud\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		responses: []fakeStemResponse{
+			{stems: []string{"devspark", "noviq"}},
+			{stems: []string{"cloudbase", "trynex"}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-generate", "short invented brand stems",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if strings.Contains(stdout.String(), "devspark") || strings.Contains(stdout.String(), "cloudbase") {
+		t.Fatalf("stdout = %q, want banned generated stems rejected before lookup", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "noviq\n") || !strings.Contains(stdout.String(), "trynex\n") {
+		t.Fatalf("stdout = %q, want accepted generated stems only", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "banned 1") {
+		t.Fatalf("stderr = %q, want lexical-ban aggregate feedback", stderr.String())
+	}
+}
+
 func TestRunJSONLWorkflowWithGeneratedStems(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 1\n"), 0o644); err != nil {
@@ -1197,9 +1251,9 @@ func TestRunTextWorkflowWithDegradedGeneratedBatch(t *testing.T) {
 	progress := stderr.String()
 	wantProgress := []string{
 		"generation: batch 1 attempt 1 requesting 2 stems",
-		"generation: batch 1 attempt 1 accepted 0, invalid 1, duplicates 1, need 2 more",
+		"generation: batch 1 attempt 1 accepted 0, invalid 1, banned 0, duplicates 1, need 2 more",
 		"generation: batch 1 attempt 2 requesting 2 stems",
-		"generation: batch 1 attempt 2 accepted 2, invalid 0, duplicates 0, need 0 more",
+		"generation: batch 1 attempt 2 accepted 2, invalid 0, banned 0, duplicates 0, need 0 more",
 		"generation: complete, accepted 2 stems",
 	}
 	for _, fragment := range wantProgress {

@@ -61,6 +61,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	generateMaxSyllables := fs.Int("generate-max-syllables", 0, "preferred maximum syllables per generated stem")
 	generateSuffix := fs.String("generate-suffix", "", "prefer generated stems ending with this text")
 	generatePrefix := fs.String("generate-prefix", "", "prefer generated stems starting with this text")
+	generateAvoidSubstrings := fs.String("generate-avoid-substrings", "", "comma-separated substrings that generated stems must not contain")
 	generateModel := fs.String("generate-model", "", "OpenAI model for stem generation")
 	forceInteractive := fs.Bool("interactive", false, "force interactive text console")
 	noInteractive := fs.Bool("no-interactive", false, "disable interactive text console")
@@ -150,15 +151,16 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			return fmt.Errorf("determine working directory: %w", err)
 		}
 		cfg, err = loadConfig(workingDir, os.LookupEnv, config.CLIOverrides{
-			OpenAIModel:          strings.TrimSpace(*generateModel),
-			GenerateCount:        *generateCount,
-			GenerateBatchSize:    *generateBatchSize,
-			GenerateMaxLength:    *generateMaxLength,
-			GenerateMaxSyllables: *generateMaxSyllables,
-			GenerateSuffix:       strings.TrimSpace(*generateSuffix),
-			GeneratePrefix:       strings.TrimSpace(*generatePrefix),
-			GenerateStyle:        strings.TrimSpace(*generateStyle),
-			PostgresDSN:          strings.TrimSpace(*pgDSN),
+			OpenAIModel:             strings.TrimSpace(*generateModel),
+			GenerateCount:           *generateCount,
+			GenerateBatchSize:       *generateBatchSize,
+			GenerateMaxLength:       *generateMaxLength,
+			GenerateMaxSyllables:    *generateMaxSyllables,
+			GenerateSuffix:          strings.TrimSpace(*generateSuffix),
+			GeneratePrefix:          strings.TrimSpace(*generatePrefix),
+			GenerateStyle:           strings.TrimSpace(*generateStyle),
+			GenerateAvoidSubstrings: strings.TrimSpace(*generateAvoidSubstrings),
+			PostgresDSN:             strings.TrimSpace(*pgDSN),
 		})
 		if err != nil {
 			return err
@@ -331,7 +333,9 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 
 	fulfiller := openai.NewFulfiller(generator, cfg.Generate)
 	err := fulfiller.Fulfill(ctx, generatePrompt, cfg.Generate.Count, func(rawBatch []string, limit int) (candidates.BatchReport, error) {
-		report := collector.AddAllReportLimited(rawBatch, limit)
+		report := collector.AddGeneratedReportLimited(rawBatch, limit, candidates.GeneratedPolicy{
+			AvoidSubstrings: cfg.Generate.AvoidSubstrings,
+		})
 		if err := processBatch(report.Accepted); err != nil {
 			return candidates.BatchReport{}, err
 		}
@@ -373,7 +377,7 @@ func renderGenerationEvent(event openai.Event) string {
 		if event.Err != nil && openai.IsQuality(event.Err) {
 			return fmt.Sprintf("generation: batch %d attempt %d produced unusable output, need %d more", event.Batch, event.Attempt, event.RemainingBatch)
 		}
-		return fmt.Sprintf("generation: batch %d attempt %d accepted %d, invalid %d, duplicates %d, need %d more", event.Batch, event.Attempt, event.Accepted, event.Invalid, event.Duplicates, event.RemainingBatch)
+		return fmt.Sprintf("generation: batch %d attempt %d accepted %d, invalid %d, banned %d, duplicates %d, need %d more", event.Batch, event.Attempt, event.Accepted, event.Invalid, event.Rejected, event.Duplicates, event.RemainingBatch)
 	case openai.EventRetry:
 		return fmt.Sprintf("generation: retrying batch %d attempt %d (%d/%d) after transient error", event.Batch, event.Attempt, event.Retry, event.RetryCount)
 	case openai.EventComplete:
