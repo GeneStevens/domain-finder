@@ -1,6 +1,6 @@
 package index
 
-import "github.com/gene/domain-finder/internal/zonefile"
+import "github.com/genestevens/domain-finder/internal/zonefile"
 
 // Exact stores a single named zone as a normalized exact-match set.
 type Exact struct {

@@ -5,7 +5,7 @@ import (
 	"io"
 	"sort"
 
-	"github.com/gene/domain-finder/internal/zonefile"
+	"github.com/genestevens/domain-finder/internal/zonefile"
 )
 
 // LoadExact opens a zone file, streams parsed records, and builds an exact

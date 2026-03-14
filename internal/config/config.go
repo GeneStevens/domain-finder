@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	baseConfigName  = "domainfinder.yaml"
-	localConfigName = "domainfinder.local.yaml"
+	baseConfigName  = "domain-finder.yaml"
+	localConfigName = "domain-finder.local.yaml"
 )
 
 // Config is the resolved runtime configuration.

@@ -3,7 +3,7 @@ package match
 import (
 	"fmt"
 
-	"github.com/gene/domain-finder/internal/index"
+	"github.com/genestevens/domain-finder/internal/index"
 )
 
 // ComposeLookupName builds the FQDN checked for a candidate stem in one zone.

@@ -8,14 +8,14 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gene/domain-finder/internal/candidates"
-	"github.com/gene/domain-finder/internal/config"
-	"github.com/gene/domain-finder/internal/index"
-	"github.com/gene/domain-finder/internal/match"
-	"github.com/gene/domain-finder/internal/openai"
-	"github.com/gene/domain-finder/internal/output"
-	"github.com/gene/domain-finder/internal/report"
-	"github.com/gene/domain-finder/internal/termui"
+	"github.com/genestevens/domain-finder/internal/candidates"
+	"github.com/genestevens/domain-finder/internal/config"
+	"github.com/genestevens/domain-finder/internal/index"
+	"github.com/genestevens/domain-finder/internal/match"
+	"github.com/genestevens/domain-finder/internal/openai"
+	"github.com/genestevens/domain-finder/internal/output"
+	"github.com/genestevens/domain-finder/internal/report"
+	"github.com/genestevens/domain-finder/internal/termui"
 )
 
 var stderrIsTTY = termui.IsTTY
@@ -27,7 +27,7 @@ var getWorkingDir = os.Getwd
 
 // Run executes the CLI entrypoint.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	fs := flag.NewFlagSet("domainfinder", flag.ContinueOnError)
+	fs := flag.NewFlagSet("domain-finder", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 
 	var zones zoneFlag
@@ -47,7 +47,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	fs.Var(&cliCandidates, "candidate", "candidate stem/label to query across loaded zones (repeatable)")
 
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, "Usage: domainfinder -zone com=path/to/com.zone -candidate example [more flags]\n\n")
+		fmt.Fprintf(stderr, "Usage: domain-finder -zone com=path/to/com.zone -candidate example [more flags]\n\n")
 		fmt.Fprintf(stderr, "Loads named zone files, checks candidate stems across all loaded zones, and can generate new stems with OpenAI.\n")
 		fs.PrintDefaults()
 	}

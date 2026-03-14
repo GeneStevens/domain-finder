@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/gene/domain-finder/internal/match"
-	"github.com/gene/domain-finder/internal/report"
+	"github.com/genestevens/domain-finder/internal/match"
+	"github.com/genestevens/domain-finder/internal/report"
 )
 
 func TestWriteText(t *testing.T) {

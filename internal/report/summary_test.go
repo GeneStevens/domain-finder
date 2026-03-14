@@ -3,7 +3,7 @@ package report
 import (
 	"testing"
 
-	"github.com/gene/domain-finder/internal/match"
+	"github.com/genestevens/domain-finder/internal/match"
 )
 
 func TestSummarize(t *testing.T) {

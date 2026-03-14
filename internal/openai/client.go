@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gene/domain-finder/internal/config"
+	"github.com/genestevens/domain-finder/internal/config"
 )
 
 const chatCompletionsURL = "https://api.openai.com/v1/chat/completions"
@@ -32,7 +32,7 @@ type Client struct {
 // NewClient creates a configured client from resolved config.
 func NewClient(cfg config.Config) (*Client, error) {
 	if cfg.OpenAI.APIKey == "" {
-		return nil, fmt.Errorf("missing OpenAI API key; set OPENAI_API_KEY or domainfinder.local.yaml")
+		return nil, fmt.Errorf("missing OpenAI API key; set OPENAI_API_KEY or domain-finder.local.yaml")
 	}
 	return &Client{
 		APIKey:  cfg.OpenAI.APIKey,

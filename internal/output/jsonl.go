@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/gene/domain-finder/internal/match"
+	"github.com/genestevens/domain-finder/internal/match"
 )
 
 // WriteJSONL renders one JSON object per candidate result.

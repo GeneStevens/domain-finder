@@ -3,7 +3,7 @@ package report
 import (
 	"fmt"
 
-	"github.com/gene/domain-finder/internal/match"
+	"github.com/genestevens/domain-finder/internal/match"
 )
 
 // FilterMode controls which classified candidate results are emitted.

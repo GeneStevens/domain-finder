@@ -7,7 +7,7 @@ available domains.
 
 ## Current architecture
 
-- `cmd/domainfinder/main.go`: thin CLI entrypoint
+- `cmd/domain-finder/main.go`: thin CLI entrypoint
 - `AGENTS.md`: persistent repo-level Codex workflow and git policy
 - `internal/app`: argument parsing and top-level lookup orchestration
 - `internal/zonefile`: zone opening, gzip detection, streaming reader, parser
@@ -60,8 +60,8 @@ available domains.
 ## Config and generation
 
 - Optional config files:
-  - `domainfinder.yaml`
-  - `domainfinder.local.yaml`
+  - `domain-finder.yaml`
+  - `domain-finder.local.yaml`
 - Precedence:
   - CLI flags
   - environment variables
@@ -70,8 +70,8 @@ available domains.
   - built-in defaults
 - API key policy:
   - prefer `OPENAI_API_KEY`
-  - allow `domainfinder.local.yaml` fallback for local-only use
-  - do not put API keys in `domainfinder.yaml`
+  - allow `domain-finder.local.yaml` fallback for local-only use
+  - do not put API keys in `domain-finder.yaml`
 - Generation model:
   - `-generate` enables OpenAI stem generation
   - generation happens in batches

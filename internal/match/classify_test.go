@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/gene/domain-finder/internal/index"
+	"github.com/genestevens/domain-finder/internal/index"
 )
 
 func TestClassifyAcrossMultipleZones(t *testing.T) {

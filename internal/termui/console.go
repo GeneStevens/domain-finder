@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/gene/domain-finder/internal/match"
-	"github.com/gene/domain-finder/internal/report"
+	"github.com/genestevens/domain-finder/internal/match"
+	"github.com/genestevens/domain-finder/internal/report"
 )
 
 // Console renders a lightweight streaming interactive console on stderr.

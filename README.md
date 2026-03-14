@@ -7,7 +7,7 @@ building toward high-scale domain availability checks.
 
 The repository currently uses stem-based matching across loaded zones:
 
-- a thin CLI entrypoint at `cmd/domainfinder`
+- a thin CLI entrypoint at `cmd/domain-finder`
 - `internal/zonefile` for opening files and detecting gzip by content
 - streaming line-by-line zone reading
 - `internal/index` for exact-match named-zone indexing and deterministic lookup
@@ -52,20 +52,20 @@ full `.com` or `.net` CZDS zone files.
 ## YAML config and OpenAI generation
 
 - Optional config files:
-  - `domainfinder.yaml`
-  - `domainfinder.local.yaml`
+  - `domain-finder.yaml`
+  - `domain-finder.local.yaml`
 - Config precedence:
   1. CLI flags
   2. environment variables
-  3. `domainfinder.local.yaml`
-  4. `domainfinder.yaml`
+  3. `domain-finder.local.yaml`
+  4. `domain-finder.yaml`
   5. built-in defaults
 - `OPENAI_API_KEY` is the primary secret source
-- `domainfinder.local.yaml` may contain a local fallback `openai.api_key`
-- `domainfinder.yaml` must not contain API keys
-- `domainfinder.local.yaml` is ignored by git
+- `domain-finder.local.yaml` may contain a local fallback `openai.api_key`
+- `domain-finder.yaml` must not contain API keys
+- `domain-finder.local.yaml` is ignored by git
 
-Committed example config lives at [`domainfinder.yaml.example`](/Users/gene/src/domain-finder/domainfinder.yaml.example).
+Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src/domain-finder/domain-finder.yaml.example).
 
 ## Generation workflow
 
@@ -110,7 +110,7 @@ Stem-based CLI input:
 
 ```sh
 env GOCACHE=/tmp/domain-finder-gocache \
-go run ./cmd/domainfinder \
+go run ./cmd/domain-finder \
   -no-interactive \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
@@ -122,7 +122,7 @@ Stem-based candidate-file input:
 
 ```sh
 env GOCACHE=/tmp/domain-finder-gocache \
-go run ./cmd/domainfinder \
+go run ./cmd/domain-finder \
   -interactive \
   -filter absent-in-all \
   -zone com=testdata/small/com.zone \
@@ -135,7 +135,7 @@ Stem-based stdin input:
 ```sh
 printf 'missing\nexample\n' | \
 env GOCACHE=/tmp/domain-finder-gocache \
-go run ./cmd/domainfinder \
+go run ./cmd/domain-finder \
   -no-interactive \
   -candidate-stdin \
   -zone com=testdata/small/com.zone \
@@ -146,7 +146,7 @@ Interactive console with stems:
 
 ```sh
 env GOCACHE=/tmp/domain-finder-gocache \
-go run ./cmd/domainfinder \
+go run ./cmd/domain-finder \
   -interactive \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
@@ -157,10 +157,10 @@ go run ./cmd/domainfinder \
 YAML-configured generation with manual stems:
 
 ```sh
-cp domainfinder.yaml.example domainfinder.yaml
+cp domain-finder.yaml.example domain-finder.yaml
 export OPENAI_API_KEY=your-key-here
 env GOCACHE=/tmp/domain-finder-gocache \
-go run ./cmd/domainfinder \
+go run ./cmd/domain-finder \
   -interactive \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \

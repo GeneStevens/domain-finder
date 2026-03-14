@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/gene/domain-finder/internal/match"
-	"github.com/gene/domain-finder/internal/report"
+	"github.com/genestevens/domain-finder/internal/match"
+	"github.com/genestevens/domain-finder/internal/report"
 )
 
 // WriteText renders candidate results followed by a summary in a deterministic format.

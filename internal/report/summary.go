@@ -1,6 +1,6 @@
 package report
 
-import "github.com/gene/domain-finder/internal/match"
+import "github.com/genestevens/domain-finder/internal/match"
 
 // Summary captures deterministic counts for a classification/report run.
 // TotalCandidates, PresentInAny, and AbsentInAll are computed from the full

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/gene/domain-finder/internal/app"
+	"github.com/genestevens/domain-finder/internal/app"
 )
 
 func main() {

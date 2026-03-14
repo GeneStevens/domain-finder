@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gene/domain-finder/internal/config"
-	"github.com/gene/domain-finder/internal/match"
-	"github.com/gene/domain-finder/internal/openai"
+	"github.com/genestevens/domain-finder/internal/config"
+	"github.com/genestevens/domain-finder/internal/match"
+	"github.com/genestevens/domain-finder/internal/openai"
 )
 
 func fixturePath(parts ...string) string {
@@ -266,7 +266,7 @@ func TestRunTextWorkflowToFileInteractive(t *testing.T) {
 
 func TestRunTextWorkflowWithGeneratedStems(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "domainfinder.yaml"), []byte("generate:\n  count: 4\n  batch_size: 2\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 4\n  batch_size: 2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -334,7 +334,7 @@ func TestRunTextWorkflowWithGeneratedStems(t *testing.T) {
 
 func TestRunTextWorkflowInteractiveWithGeneratedStems(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "domainfinder.yaml"), []byte("generate:\n  count: 3\n  batch_size: 2\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 3\n  batch_size: 2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -412,7 +412,7 @@ func TestRunTextWorkflowInteractiveWithGeneratedStems(t *testing.T) {
 
 func TestRunJSONLWorkflowWithGeneratedStems(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "domainfinder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
