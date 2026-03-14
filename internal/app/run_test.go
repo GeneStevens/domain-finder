@@ -907,6 +907,7 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 		"  avoid_prefixes: dev,neo\n" +
 		"  avoid_suffixes: ia,ora\n" +
 		"  max_cost_usd: 0.50\n" +
+		"  target_available_hits: 6\n" +
 		"  target_strong_hits: 4\n" +
 		"  max_stall_batches: 5\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
@@ -987,7 +988,7 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 	if got := strings.Join(captured.AvoidSuffixes, ","); got != "ia,ora" {
 		t.Fatalf("captured.AvoidSuffixes = %q, want ia,ora from config", got)
 	}
-	if captured.MaxCostUSD != 0.50 || captured.TargetStrongHits != 4 || captured.MaxStallBatches != 5 {
+	if captured.MaxCostUSD != 0.50 || captured.TargetAvailableHits != 6 || captured.TargetStrongHits != 4 || captured.MaxStallBatches != 5 {
 		t.Fatalf("captured stop conditions = %#v, want cost/strong/stall from config", captured)
 	}
 	if len(generator.calls) != 2 || generator.calls[0] != 2 || generator.calls[1] != 2 {
@@ -1021,6 +1022,7 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"  avoid_prefixes: dev,neo\n" +
 		"  avoid_suffixes: ia,ora\n" +
 		"  max_cost_usd: 0.50\n" +
+		"  target_available_hits: 6\n" +
 		"  target_strong_hits: 4\n" +
 		"  max_stall_batches: 5\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
@@ -1073,6 +1075,7 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"avoid_prefixes: dev, neo",
 		"avoid_suffixes: ia, ora",
 		"max_cost_usd: 0.50",
+		"target_available_hits: 6",
 		"target_strong_hits: 4",
 		"max_stall_batches: 5",
 		"system prompt",
@@ -1143,6 +1146,7 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"-generate-avoid-prefixes", "dev,neo",
 		"-generate-avoid-suffixes", "ia,ora",
 		"-generate-max-cost-usd", "1.25",
+		"-generate-target-available-hits", "12",
 		"-generate-target-strong-hits", "8",
 		"-generate-max-stall-batches", "6",
 	}, strings.NewReader(""), &stdout, &stderr)
@@ -1167,6 +1171,7 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"avoid_prefixes: dev, neo",
 		"avoid_suffixes: ia, ora",
 		"max_cost_usd: 1.25",
+		"target_available_hits: 12",
 		"target_strong_hits: 8",
 		"max_stall_batches: 6",
 		"start with `dev`",
@@ -1200,6 +1205,7 @@ func TestRunGenerateDryRunJSONOutput(t *testing.T) {
 		"  avoid_prefixes: dev,neo\n" +
 		"  avoid_suffixes: ia,ora\n" +
 		"  max_cost_usd: 0.50\n" +
+		"  target_available_hits: 6\n" +
 		"  target_strong_hits: 4\n" +
 		"  max_stall_batches: 5\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
@@ -1260,7 +1266,7 @@ func TestRunGenerateDryRunJSONOutput(t *testing.T) {
 	if len(avoidSuffixes) != 2 || avoidSuffixes[0] != "ia" || avoidSuffixes[1] != "ora" {
 		t.Fatalf("avoid_suffixes = %#v, want [ia ora]", avoidSuffixes)
 	}
-	if constraints["max_cost_usd"] != 0.5 || constraints["target_strong_hits"] != float64(4) || constraints["max_stall_batches"] != float64(5) {
+	if constraints["max_cost_usd"] != 0.5 || constraints["target_available_hits"] != float64(6) || constraints["target_strong_hits"] != float64(4) || constraints["max_stall_batches"] != float64(5) {
 		t.Fatalf("constraints = %#v, want stop-condition values", constraints)
 	}
 	if constraints["adaptive_refill"] != true || constraints["min_batch_size"] != float64(1) {
@@ -1290,6 +1296,7 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		"  avoid_prefixes: dev,neo\n" +
 		"  avoid_suffixes: ia,ora\n" +
 		"  max_cost_usd: 0.50\n" +
+		"  target_available_hits: 6\n" +
 		"  target_strong_hits: 4\n" +
 		"  max_stall_batches: 5\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
@@ -1320,6 +1327,7 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		"-generate-avoid-prefixes", "sys,neo",
 		"-generate-avoid-suffixes", "io,iva",
 		"-generate-max-cost-usd", "1.25",
+		"-generate-target-available-hits", "12",
 		"-generate-target-strong-hits", "8",
 		"-generate-max-stall-batches", "6",
 	}, strings.NewReader(""), &stdout, &stderr)
@@ -1349,7 +1357,7 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 	if len(avoidSuffixes) != 2 || avoidSuffixes[0] != "io" || avoidSuffixes[1] != "iva" {
 		t.Fatalf("avoid_suffixes = %#v, want [io iva]", avoidSuffixes)
 	}
-	if constraints["max_cost_usd"] != 1.25 || constraints["target_strong_hits"] != float64(8) || constraints["max_stall_batches"] != float64(6) {
+	if constraints["max_cost_usd"] != 1.25 || constraints["target_available_hits"] != float64(12) || constraints["target_strong_hits"] != float64(8) || constraints["max_stall_batches"] != float64(6) {
 		t.Fatalf("constraints = %#v, want CLI stop-condition values", constraints)
 	}
 	if constraints["adaptive_refill"] != true || constraints["min_batch_size"] != float64(2) {
@@ -1664,6 +1672,121 @@ func TestRunGenerationStopsOnStrongHitTarget(t *testing.T) {
 	}
 }
 
+func TestRunGenerationStopsOnAvailableHitTarget(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 4\n  batch_size: 2\n  quality_profile: off\n  target_available_hits: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		model: "gpt-4o-mini",
+		responses: []fakeStemResponse{
+			{result: openai.BatchResult{Stems: []string{"mixedcase", "example"}}},
+			{result: openai.BatchResult{Stems: []string{"qentil", "kinrox"}}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	originalOpenPostgresBackend := openPostgresBackend
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+		openPostgresBackend = originalOpenPostgresBackend
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+	openPostgresBackend = func(dsn string, zones []string) (backend.Lookup, io.Closer, error) {
+		return fakeLookup{
+			zones: zones,
+			present: map[string]bool{
+				"com/example":   true,
+				"net/example":   true,
+				"com/mixedcase": true,
+			},
+		}, nil, nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-backend", "postgres",
+		"-pg-dsn", "postgres://test",
+		"-zone", "net",
+		"-zone", "com",
+		"-generate", "industrial infrastructure names",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(generator.calls) != 1 {
+		t.Fatalf("generator calls = %#v, want one batch before available-hit stop", generator.calls)
+	}
+	if !strings.Contains(stderr.String(), "available-hit target reached") {
+		t.Fatalf("stderr = %q, want available-hit stop reason", stderr.String())
+	}
+}
+
+func TestRunGenerationAvailableHitTargetWinsBeforeStrongHitTarget(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 4\n  batch_size: 2\n  quality_profile: off\n  target_available_hits: 1\n  target_strong_hits: 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		model: "gpt-4o-mini",
+		responses: []fakeStemResponse{
+			{result: openai.BatchResult{Stems: []string{"mixedcase", "example"}}},
+			{result: openai.BatchResult{Stems: []string{"qentil", "kinrox"}}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	originalOpenPostgresBackend := openPostgresBackend
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+		openPostgresBackend = originalOpenPostgresBackend
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+	openPostgresBackend = func(dsn string, zones []string) (backend.Lookup, io.Closer, error) {
+		return fakeLookup{
+			zones: zones,
+			present: map[string]bool{
+				"com/example":   true,
+				"net/example":   true,
+				"com/mixedcase": true,
+			},
+		}, nil, nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-backend", "postgres",
+		"-pg-dsn", "postgres://test",
+		"-zone", "net",
+		"-zone", "com",
+		"-generate", "industrial infrastructure names",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(generator.calls) != 1 {
+		t.Fatalf("generator calls = %#v, want available-hit target to stop before later strong hits", generator.calls)
+	}
+	if !strings.Contains(stderr.String(), "available-hit target reached") {
+		t.Fatalf("stderr = %q, want available-hit stop reason", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "strong-hit target reached") {
+		t.Fatalf("stderr = %q, want available-hit stop to win first", stderr.String())
+	}
+}
+
 func TestRunGenerationStopsOnStallLimit(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 4\n  batch_size: 2\n  max_stall_batches: 1\n  avoid_substrings: dev,cloud\n"), 0o644); err != nil {
@@ -1760,6 +1883,73 @@ func TestRunSummaryIncludesStopReason(t *testing.T) {
 	}
 }
 
+func TestRunSummaryIncludesAvailableHitFields(t *testing.T) {
+	dir := t.TempDir()
+	summaryPath := filepath.Join(dir, "run-summary.json")
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 4\n  batch_size: 2\n  quality_profile: off\n  target_available_hits: 1\n  target_strong_hits: 2\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		model: "gpt-4o-mini",
+		responses: []fakeStemResponse{
+			{result: openai.BatchResult{Stems: []string{"mixedcase", "example"}}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	originalOpenPostgresBackend := openPostgresBackend
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+		openPostgresBackend = originalOpenPostgresBackend
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+	openPostgresBackend = func(dsn string, zones []string) (backend.Lookup, io.Closer, error) {
+		return fakeLookup{
+			zones: zones,
+			present: map[string]bool{
+				"com/example":   true,
+				"net/example":   true,
+				"com/mixedcase": true,
+			},
+		}, nil, nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-run-summary", summaryPath,
+		"-backend", "postgres",
+		"-pg-dsn", "postgres://test",
+		"-zone", "net",
+		"-zone", "com",
+		"-generate", "industrial infrastructure names",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	data, err := os.ReadFile(summaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\n%s", err, string(data))
+	}
+	generation := got["generation"].(map[string]any)
+	if generation["target_available_hits"] != float64(1) || generation["available_hits"] != float64(1) {
+		t.Fatalf("generation = %#v, want available-hit fields", generation)
+	}
+	if generation["stop_reason"] != "available_hit_target_reached" {
+		t.Fatalf("generation = %#v, want available-hit stop reason", generation)
+	}
+}
+
 func TestRenderGenerationUsageLinesPricingUnavailable(t *testing.T) {
 	lines := renderGenerationUsageLines("custom-model", openai.UsageTotals{
 		Model:             "custom-model",
@@ -1793,19 +1983,22 @@ func TestRenderGenerationEventRequestIncludesLiveProgress(t *testing.T) {
 		BaseBatchSize:      8,
 		EffectiveBatchSize: 2,
 		Stop: openai.StopSnapshot{
-			StrongHits:       5,
-			TargetStrongHits: 20,
-			StallBatches:     1,
-			MaxStallBatches:  8,
-			PricingAvailable: true,
-			EstimatedCostUSD: 0.0142,
-			MaxCostUSD:       1.00,
+			AvailableHits:       7,
+			TargetAvailableHits: 100,
+			StrongHits:          5,
+			TargetStrongHits:    20,
+			StallBatches:        1,
+			MaxStallBatches:     8,
+			PricingAvailable:    true,
+			EstimatedCostUSD:    0.0142,
+			MaxCostUSD:          1.00,
 		},
 	})
 
 	for _, fragment := range []string{
 		"generation: batch 22 attempt 2 requesting 1 stems",
 		"batch_size 8->2",
+		"available 7/100",
 		"strong 5/20",
 		"stall 1/8",
 		"cost $0.014200/1.00",
@@ -1841,13 +2034,15 @@ func TestRenderGenerationEventLaterUpdatesKeepCostAndProgress(t *testing.T) {
 			EstimatedCostUSD: 0.0142,
 		},
 		Stop: openai.StopSnapshot{
-			StrongHits:       5,
-			TargetStrongHits: 20,
-			StallBatches:     1,
-			MaxStallBatches:  8,
-			PricingAvailable: true,
-			EstimatedCostUSD: 0.0142,
-			MaxCostUSD:       1.00,
+			AvailableHits:       7,
+			TargetAvailableHits: 100,
+			StrongHits:          5,
+			TargetStrongHits:    20,
+			StallBatches:        1,
+			MaxStallBatches:     8,
+			PricingAvailable:    true,
+			EstimatedCostUSD:    0.0142,
+			MaxCostUSD:          1.00,
 		},
 	})
 	requestLine := renderGenerationEvent(openai.Event{
@@ -1858,18 +2053,20 @@ func TestRenderGenerationEventLaterUpdatesKeepCostAndProgress(t *testing.T) {
 		BaseBatchSize:      8,
 		EffectiveBatchSize: 2,
 		Stop: openai.StopSnapshot{
-			StrongHits:       5,
-			TargetStrongHits: 20,
-			StallBatches:     1,
-			MaxStallBatches:  8,
-			PricingAvailable: true,
-			EstimatedCostUSD: 0.0142,
-			MaxCostUSD:       1.00,
+			AvailableHits:       7,
+			TargetAvailableHits: 100,
+			StrongHits:          5,
+			TargetStrongHits:    20,
+			StallBatches:        1,
+			MaxStallBatches:     8,
+			PricingAvailable:    true,
+			EstimatedCostUSD:    0.0142,
+			MaxCostUSD:          1.00,
 		},
 	})
 
 	for _, line := range []string{resultLine, requestLine} {
-		for _, fragment := range []string{"strong 5/20", "stall 1/8"} {
+		for _, fragment := range []string{"available 7/100", "strong 5/20", "stall 1/8"} {
 			if !strings.Contains(line, fragment) {
 				t.Fatalf("renderGenerationEvent() missing %q:\n%s", fragment, line)
 			}

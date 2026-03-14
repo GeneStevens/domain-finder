@@ -178,6 +178,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-avoid-prefixes` hard-bans generated stems that start with certain prefixes
 - `-generate-avoid-suffixes` hard-bans generated stems that end with certain suffixes
 - `-generate-max-cost-usd` stops generation once cumulative estimated spend reaches the configured USD cap
+- `-generate-target-available-hits` stops generation once enough candidates are available in at least one requested zone
 - `-generate-target-strong-hits` stops generation once enough all-zone strong hits have been found
 - `-generate-max-stall-batches` stops generation after too many consecutive no-progress batches
 - `-generate-dry-run` prints the fully resolved generation contract and exits before any OpenAI call
@@ -220,6 +221,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - Generation can now stop on any configured stop condition:
   - accepted-count target
   - estimated cost cap
+  - available-hit target
   - strong-hit target
   - stall limit
 - The default fallback still uses `-generate-count` as the accepted-count stop condition
@@ -227,6 +229,10 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-max-cost-usd` uses cumulative estimated spend from OpenAI `usage` plus the repo pricing table
 - Cost-cap runs require known pricing for the selected model
   - if pricing is unavailable, the run fails clearly instead of silently ignoring the cap
+- `-generate-target-available-hits` uses a broader availability definition:
+  - stems with result state `partial` or `all`
+  - this means available in at least one requested zone
+  - taken stems do not count
 - `-generate-target-strong-hits` tracks the strongest current result class:
   - stems absent across all requested zones
   - the same `all ✓` semantics shown in the interactive table
@@ -234,6 +240,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - consecutive batches with zero newly accepted generated stems
   - and zero increase in strong all-zone hits
 - Batch status lines now show compact progress such as:
+  - `available 37/100`
   - `strong 3/25`
   - `stall 2/8`
   - `cost $0.18/1.00`

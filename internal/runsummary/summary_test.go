@@ -64,9 +64,11 @@ func TestWriteArtifactJSON(t *testing.T) {
 			AvoidPrefixes:           []string{"dev", "neo"},
 			AvoidSuffixes:           []string{"ia", "ora"},
 			MaxCostUSD:              1.00,
+			TargetAvailableHits:     6,
 			TargetStrongHits:        3,
 			MaxStallBatches:         4,
 			AcceptedCount:           3,
+			AvailableHits:           5,
 			UnderfilledBatches:      2,
 			UnderfilledStems:        5,
 			StopReason:              "strong_hit_target_reached",
@@ -107,8 +109,11 @@ func TestWriteArtifactJSON(t *testing.T) {
 	if _, ok := generation["avoid_suffixes"]; !ok {
 		t.Fatalf("generation = %#v, want avoid_suffixes", generation)
 	}
-	if generation["max_cost_usd"] != float64(1) || generation["target_strong_hits"] != float64(3) || generation["max_stall_batches"] != float64(4) {
+	if generation["max_cost_usd"] != float64(1) || generation["target_available_hits"] != float64(6) || generation["target_strong_hits"] != float64(3) || generation["max_stall_batches"] != float64(4) {
 		t.Fatalf("generation = %#v, want stop condition fields", generation)
+	}
+	if generation["available_hits"] != float64(5) {
+		t.Fatalf("generation = %#v, want available_hits field", generation)
 	}
 	if generation["adaptive_refill"] != true || generation["min_batch_size"] != float64(2) || generation["final_effective_batch_size"] != float64(1) {
 		t.Fatalf("generation = %#v, want adaptive refill fields", generation)

@@ -100,7 +100,7 @@ available domains.
   - each batch is normalized, deduped, and processed before the next batch
   - `internal/openai` owns a dedicated prompt builder for the generation contract
   - prompt constraints can steer length, syllables, prefix, suffix, style, banned substrings, and the generated quality profile
-  - generation runs can also stop on explicit budget- and goal-shaped controls such as cost cap, strong-hit target, and stall limit
+  - generation runs can also stop on explicit budget- and goal-shaped controls such as cost cap, available-hit target, strong-hit target, and stall limit
   - generation runs can also use adaptive refill to shrink effective batch size after repeated underfilled batches
   - generated outputs must be stems only, not FQDNs
   - each batch has bounded fulfillment attempts
@@ -118,8 +118,10 @@ available domains.
   - any configured stop condition can end the run:
     - accepted-count target
     - estimated cost cap
+    - available-hit target
     - strong-hit target
     - stall limit
+  - available-hit target counts results that are available in at least one requested zone (`partial` or `all`, but not `taken`)
   - stall is currently defined as consecutive batches with zero newly accepted stems and zero increase in strong all-zone hits
   - adaptive refill currently uses a simple one-way shrink:
     - after 2 consecutive underfilled batches, halve the effective batch size
@@ -183,7 +185,7 @@ available domains.
 - `-generate-dry-run-format text|json` selects human-readable or machine-readable contract inspection.
 - `-generate-count`, `-generate-batch-size`, and `-generate-model` override generation config.
 - `-generate-style`, `-generate-quality-profile`, `-generate-max-length`, `-generate-max-syllables`, `-generate-prefix`, `-generate-suffix`, `-generate-avoid-substrings`, `-generate-avoid-prefixes`, and `-generate-avoid-suffixes` steer prompt construction.
-- `-generate-max-cost-usd`, `-generate-target-strong-hits`, and `-generate-max-stall-batches` add budget- and goal-driven generation stop conditions.
+- `-generate-max-cost-usd`, `-generate-target-available-hits`, `-generate-target-strong-hits`, and `-generate-max-stall-batches` add budget- and goal-driven generation stop conditions.
 - `-generate-adaptive-refill` and `-generate-min-batch-size` control adaptive request shrinking for sparse late-run generation.
 - `generate.max_attempts` and `generate.retry_count` harden generation behavior from YAML/env config.
 - `-format text|jsonl` selects a human-readable or machine-readable output mode.

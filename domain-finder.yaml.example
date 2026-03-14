@@ -25,6 +25,7 @@ generate:
   max_attempts: 3
   retry_count: 2
   max_cost_usd: 1.00
+  target_available_hits: 100
   target_strong_hits: 25
   max_stall_batches: 8
   quality_profile: industrial

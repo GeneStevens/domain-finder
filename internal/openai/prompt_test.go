@@ -11,21 +11,22 @@ import (
 func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 	builder := PromptBuilder{}
 	got := builder.BuildUserPrompt(PromptInput{
-		QualityProfile:   "industrial",
-		Theme:            "invented product names",
-		Style:            "developer tool",
-		MaxLength:        12,
-		MaxSyllables:     3,
-		Prefix:           "dev",
-		Suffix:           "io",
-		AvoidSubstrings:  []string{"stack", "cloud"},
-		AvoidPrefixes:    []string{"dev", "neo"},
-		AvoidSuffixes:    []string{"ia", "ora"},
-		MaxCostUSD:       1.25,
-		TargetStrongHits: 7,
-		MaxStallBatches:  4,
-		AdaptiveRefill:   true,
-		MinBatchSize:     2,
+		QualityProfile:      "industrial",
+		Theme:               "invented product names",
+		Style:               "developer tool",
+		MaxLength:           12,
+		MaxSyllables:        3,
+		Prefix:              "dev",
+		Suffix:              "io",
+		AvoidSubstrings:     []string{"stack", "cloud"},
+		AvoidPrefixes:       []string{"dev", "neo"},
+		AvoidSuffixes:       []string{"ia", "ora"},
+		MaxCostUSD:          1.25,
+		TargetAvailableHits: 11,
+		TargetStrongHits:    7,
+		MaxStallBatches:     4,
+		AdaptiveRefill:      true,
+		MinBatchSize:        2,
 	}, 25)
 
 	wantFragments := []string{
@@ -46,6 +47,7 @@ func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 		"`neo`",
 		"`ora`",
 		"estimated spend reaches $1.25",
+		"11 available hits are found",
 		"7 strong all-zone hits",
 		"4 consecutive stall batches",
 		"adaptive refill may shrink the effective batch size",
@@ -61,23 +63,24 @@ func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 
 func TestNewPromptInputFromConfig(t *testing.T) {
 	got := NewPromptInput("security names", config.GenerateConfig{
-		QualityProfile:   "industrial",
-		Style:            "security product",
-		MaxLength:        10,
-		MaxSyllables:     2,
-		Prefix:           "sec",
-		Suffix:           "ix",
-		AvoidSubstrings:  []string{"dev", "cloud"},
-		AvoidPrefixes:    []string{"dev"},
-		AvoidSuffixes:    []string{"ia", "ora"},
-		MaxCostUSD:       0.75,
-		TargetStrongHits: 5,
-		MaxStallBatches:  3,
-		AdaptiveRefill:   true,
-		MinBatchSize:     2,
+		QualityProfile:      "industrial",
+		Style:               "security product",
+		MaxLength:           10,
+		MaxSyllables:        2,
+		Prefix:              "sec",
+		Suffix:              "ix",
+		AvoidSubstrings:     []string{"dev", "cloud"},
+		AvoidPrefixes:       []string{"dev"},
+		AvoidSuffixes:       []string{"ia", "ora"},
+		MaxCostUSD:          0.75,
+		TargetAvailableHits: 4,
+		TargetStrongHits:    5,
+		MaxStallBatches:     3,
+		AdaptiveRefill:      true,
+		MinBatchSize:        2,
 	})
 
-	if got.QualityProfile != "industrial" || got.Theme != "security names" || got.Style != "security product" || got.MaxLength != 10 || got.MaxSyllables != 2 || got.Prefix != "sec" || got.Suffix != "ix" || len(got.AvoidSubstrings) != 2 || len(got.AvoidPrefixes) != 1 || len(got.AvoidSuffixes) != 2 || got.MaxCostUSD != 0.75 || got.TargetStrongHits != 5 || got.MaxStallBatches != 3 || !got.AdaptiveRefill || got.MinBatchSize != 2 {
+	if got.QualityProfile != "industrial" || got.Theme != "security names" || got.Style != "security product" || got.MaxLength != 10 || got.MaxSyllables != 2 || got.Prefix != "sec" || got.Suffix != "ix" || len(got.AvoidSubstrings) != 2 || len(got.AvoidPrefixes) != 1 || len(got.AvoidSuffixes) != 2 || got.MaxCostUSD != 0.75 || got.TargetAvailableHits != 4 || got.TargetStrongHits != 5 || got.MaxStallBatches != 3 || !got.AdaptiveRefill || got.MinBatchSize != 2 {
 		t.Fatalf("NewPromptInput() = %#v, want populated constraint input", got)
 	}
 }
@@ -103,6 +106,7 @@ func TestBuildContractAndRender(t *testing.T) {
 			AvoidPrefixes:       []string{"dev", "neo"},
 			AvoidSuffixes:       []string{"ia", "ora"},
 			MaxCostUSD:          1.25,
+			TargetAvailableHits: 11,
 			TargetStrongHits:    7,
 			MaxStallBatches:     4,
 			AdaptiveRefill:      true,
@@ -133,6 +137,7 @@ func TestBuildContractAndRender(t *testing.T) {
 		"avoid_prefixes: dev, neo",
 		"avoid_suffixes: ia, ora",
 		"max_cost_usd: 1.25",
+		"target_available_hits: 11",
 		"target_strong_hits: 7",
 		"max_stall_batches: 4",
 		"adaptive_refill: true",
@@ -173,6 +178,7 @@ func TestRenderContractJSON(t *testing.T) {
 			AvoidPrefixes:       []string{"dev", "neo"},
 			AvoidSuffixes:       []string{"ia", "ora"},
 			MaxCostUSD:          1.25,
+			TargetAvailableHits: 11,
 			TargetStrongHits:    7,
 			MaxStallBatches:     4,
 			AdaptiveRefill:      true,
@@ -224,7 +230,7 @@ func TestRenderContractJSON(t *testing.T) {
 	if len(avoidSuffixes) != 2 || avoidSuffixes[0] != "ia" || avoidSuffixes[1] != "ora" {
 		t.Fatalf("avoid_suffixes = %#v, want [ia ora]", avoidSuffixes)
 	}
-	if constraints["max_cost_usd"] != 1.25 || constraints["target_strong_hits"] != float64(7) || constraints["max_stall_batches"] != float64(4) {
+	if constraints["max_cost_usd"] != 1.25 || constraints["target_available_hits"] != float64(11) || constraints["target_strong_hits"] != float64(7) || constraints["max_stall_batches"] != float64(4) {
 		t.Fatalf("constraints = %#v, want stop-condition fields", constraints)
 	}
 	if constraints["adaptive_refill"] != true || constraints["min_batch_size"] != float64(2) {

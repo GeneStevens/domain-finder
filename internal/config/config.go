@@ -43,6 +43,7 @@ type GenerateConfig struct {
 	AvoidPrefixes       []string
 	AvoidSuffixes       []string
 	MaxCostUSD          float64
+	TargetAvailableHits int
 	TargetStrongHits    int
 	MaxStallBatches     int
 }
@@ -53,48 +54,50 @@ type PostgresConfig struct {
 
 // CLIOverrides are the CLI-provided config overrides.
 type CLIOverrides struct {
-	OpenAIModel              string
-	GenerateCount            int
-	GenerateBatchSize        int
-	GenerateAdaptiveRefill   bool
-	GenerateMinBatchSize     int
-	GenerateQualityProfile   string
-	GenerateMaxLength        int
-	GenerateMaxSyllables     int
-	GenerateSuffix           string
-	GeneratePrefix           string
-	GenerateStyle            string
-	GenerateAvoidSubstrings  string
-	GenerateAvoidPrefixes    string
-	GenerateAvoidSuffixes    string
-	GenerateMaxCostUSD       float64
-	GenerateTargetStrongHits int
-	GenerateMaxStallBatches  int
-	PostgresDSN              string
+	OpenAIModel                 string
+	GenerateCount               int
+	GenerateBatchSize           int
+	GenerateAdaptiveRefill      bool
+	GenerateMinBatchSize        int
+	GenerateQualityProfile      string
+	GenerateMaxLength           int
+	GenerateMaxSyllables        int
+	GenerateSuffix              string
+	GeneratePrefix              string
+	GenerateStyle               string
+	GenerateAvoidSubstrings     string
+	GenerateAvoidPrefixes       string
+	GenerateAvoidSuffixes       string
+	GenerateMaxCostUSD          float64
+	GenerateTargetAvailableHits int
+	GenerateTargetStrongHits    int
+	GenerateMaxStallBatches     int
+	PostgresDSN                 string
 }
 
 type fileConfig struct {
-	OpenAIAPIKey             string
-	OpenAIModel              string
-	GenerateCount            int
-	GenerateBatchSize        int
-	GenerateAdaptiveRefill   bool
-	GenerateMinBatchSize     int
-	GenerateMaxAttempts      int
-	GenerateRetryCount       int
-	GenerateQualityProfile   string
-	GenerateMaxLength        int
-	GenerateMaxSyllables     int
-	GenerateSuffix           string
-	GeneratePrefix           string
-	GenerateStyle            string
-	GenerateAvoidSubstrings  string
-	GenerateAvoidPrefixes    string
-	GenerateAvoidSuffixes    string
-	GenerateMaxCostUSD       float64
-	GenerateTargetStrongHits int
-	GenerateMaxStallBatches  int
-	PostgresDSN              string
+	OpenAIAPIKey                string
+	OpenAIModel                 string
+	GenerateCount               int
+	GenerateBatchSize           int
+	GenerateAdaptiveRefill      bool
+	GenerateMinBatchSize        int
+	GenerateMaxAttempts         int
+	GenerateRetryCount          int
+	GenerateQualityProfile      string
+	GenerateMaxLength           int
+	GenerateMaxSyllables        int
+	GenerateSuffix              string
+	GeneratePrefix              string
+	GenerateStyle               string
+	GenerateAvoidSubstrings     string
+	GenerateAvoidPrefixes       string
+	GenerateAvoidSuffixes       string
+	GenerateMaxCostUSD          float64
+	GenerateTargetAvailableHits int
+	GenerateTargetStrongHits    int
+	GenerateMaxStallBatches     int
+	PostgresDSN                 string
 }
 
 // Load resolves configuration using precedence:
@@ -222,6 +225,13 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 		}
 		cfg.Generate.MaxCostUSD = parsed
 	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_TARGET_AVAILABLE_HITS"); ok && value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_TARGET_AVAILABLE_HITS: %w", err)
+		}
+		cfg.Generate.TargetAvailableHits = parsed
+	}
 	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_TARGET_STRONG_HITS"); ok && value != "" {
 		parsed, err := strconv.Atoi(value)
 		if err != nil {
@@ -281,6 +291,9 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	}
 	if cli.GenerateMaxCostUSD > 0 {
 		cfg.Generate.MaxCostUSD = cli.GenerateMaxCostUSD
+	}
+	if cli.GenerateTargetAvailableHits > 0 {
+		cfg.Generate.TargetAvailableHits = cli.GenerateTargetAvailableHits
 	}
 	if cli.GenerateTargetStrongHits > 0 {
 		cfg.Generate.TargetStrongHits = cli.GenerateTargetStrongHits
@@ -349,6 +362,9 @@ func applyFileConfig(cfg *Config, fc fileConfig) {
 	}
 	if fc.GenerateMaxCostUSD > 0 {
 		cfg.Generate.MaxCostUSD = fc.GenerateMaxCostUSD
+	}
+	if fc.GenerateTargetAvailableHits > 0 {
+		cfg.Generate.TargetAvailableHits = fc.GenerateTargetAvailableHits
 	}
 	if fc.GenerateTargetStrongHits > 0 {
 		cfg.Generate.TargetStrongHits = fc.GenerateTargetStrongHits
@@ -467,6 +483,12 @@ func loadFile(path string) (fileConfig, error) {
 				return fileConfig{}, fmt.Errorf("parse %s generate.max_cost_usd: %w", path, err)
 			}
 			cfg.GenerateMaxCostUSD = parsed
+		case "generate.target_available_hits":
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return fileConfig{}, fmt.Errorf("parse %s generate.target_available_hits: %w", path, err)
+			}
+			cfg.GenerateTargetAvailableHits = parsed
 		case "generate.target_strong_hits":
 			parsed, err := strconv.Atoi(value)
 			if err != nil {

@@ -71,6 +71,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	generateAvoidPrefixes := fs.String("generate-avoid-prefixes", "", "comma-separated prefixes that generated stems must not start with")
 	generateAvoidSuffixes := fs.String("generate-avoid-suffixes", "", "comma-separated suffixes that generated stems must not end with")
 	generateMaxCostUSD := fs.Float64("generate-max-cost-usd", 0, "stop generation once estimated spend reaches this USD cap")
+	generateTargetAvailableHits := fs.Int("generate-target-available-hits", 0, "stop generation once this many available candidates have been found")
 	generateTargetStrongHits := fs.Int("generate-target-strong-hits", 0, "stop generation once this many strong all-zone hits are found")
 	generateMaxStallBatches := fs.Int("generate-max-stall-batches", 0, "stop generation after this many consecutive stall batches")
 	generateModel := fs.String("generate-model", "", "OpenAI model for stem generation")
@@ -176,24 +177,25 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			return fmt.Errorf("determine working directory: %w", err)
 		}
 		cfg, err = loadConfig(workingDir, os.LookupEnv, config.CLIOverrides{
-			OpenAIModel:              strings.TrimSpace(*generateModel),
-			GenerateCount:            *generateCount,
-			GenerateBatchSize:        *generateBatchSize,
-			GenerateAdaptiveRefill:   *generateAdaptiveRefill,
-			GenerateMinBatchSize:     *generateMinBatchSize,
-			GenerateQualityProfile:   strings.TrimSpace(*generateQualityProfile),
-			GenerateMaxLength:        *generateMaxLength,
-			GenerateMaxSyllables:     *generateMaxSyllables,
-			GenerateSuffix:           strings.TrimSpace(*generateSuffix),
-			GeneratePrefix:           strings.TrimSpace(*generatePrefix),
-			GenerateStyle:            strings.TrimSpace(*generateStyle),
-			GenerateAvoidSubstrings:  strings.TrimSpace(*generateAvoidSubstrings),
-			GenerateAvoidPrefixes:    strings.TrimSpace(*generateAvoidPrefixes),
-			GenerateAvoidSuffixes:    strings.TrimSpace(*generateAvoidSuffixes),
-			GenerateMaxCostUSD:       *generateMaxCostUSD,
-			GenerateTargetStrongHits: *generateTargetStrongHits,
-			GenerateMaxStallBatches:  *generateMaxStallBatches,
-			PostgresDSN:              strings.TrimSpace(*pgDSN),
+			OpenAIModel:                 strings.TrimSpace(*generateModel),
+			GenerateCount:               *generateCount,
+			GenerateBatchSize:           *generateBatchSize,
+			GenerateAdaptiveRefill:      *generateAdaptiveRefill,
+			GenerateMinBatchSize:        *generateMinBatchSize,
+			GenerateQualityProfile:      strings.TrimSpace(*generateQualityProfile),
+			GenerateMaxLength:           *generateMaxLength,
+			GenerateMaxSyllables:        *generateMaxSyllables,
+			GenerateSuffix:              strings.TrimSpace(*generateSuffix),
+			GeneratePrefix:              strings.TrimSpace(*generatePrefix),
+			GenerateStyle:               strings.TrimSpace(*generateStyle),
+			GenerateAvoidSubstrings:     strings.TrimSpace(*generateAvoidSubstrings),
+			GenerateAvoidPrefixes:       strings.TrimSpace(*generateAvoidPrefixes),
+			GenerateAvoidSuffixes:       strings.TrimSpace(*generateAvoidSuffixes),
+			GenerateMaxCostUSD:          *generateMaxCostUSD,
+			GenerateTargetAvailableHits: *generateTargetAvailableHits,
+			GenerateTargetStrongHits:    *generateTargetStrongHits,
+			GenerateMaxStallBatches:     *generateMaxStallBatches,
+			PostgresDSN:                 strings.TrimSpace(*pgDSN),
 		})
 		if err != nil {
 			return err
@@ -290,6 +292,7 @@ type runOutcome struct {
 	UsageTotals         openai.UsageTotals
 	Underfills          openai.UnderfillTotals
 	Stop                *openai.StopSnapshot
+	AvailableHits       int
 }
 
 func runDeterministicTextMode(ctx context.Context, backendName string, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, statusWriter io.Writer, auditLogger *audit.Logger) (runOutcome, error) {
@@ -323,6 +326,7 @@ func runDeterministicTextMode(ctx context.Context, backendName string, lookup ba
 		UsageTotals:         usageTotals,
 		Underfills:          underfills,
 		Stop:                stop,
+		AvailableHits:       countAvailableHits(allResults),
 	}, nil
 }
 
@@ -390,6 +394,7 @@ func runInteractiveTextMode(ctx context.Context, backendName string, lookup back
 			UsageTotals:         usageTotals,
 			Underfills:          underfills,
 			Stop:                stop,
+			AvailableHits:       countAvailableHits(allResults),
 		}, nil
 	}
 	if err := output.WriteTextSummary(resultWriter, summary); err != nil {
@@ -403,6 +408,7 @@ func runInteractiveTextMode(ctx context.Context, backendName string, lookup back
 		UsageTotals:         usageTotals,
 		Underfills:          underfills,
 		Stop:                stop,
+		AvailableHits:       countAvailableHits(allResults),
 	}, nil
 }
 
@@ -422,15 +428,17 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 	var underfills openai.UnderfillTotals
 	var stop *openai.StopSnapshot
 	processedCount := 0
+	availableHits := 0
 	strongHits := 0
 
-	processBatch := func(candidates []string) (int, error) {
+	processBatch := func(candidates []string) (int, int, error) {
+		availableDelta := 0
 		strongDelta := 0
 		for _, candidate := range candidates {
 			processedCount++
 			result, err := match.Classify(ctx, lookup, candidate)
 			if err != nil {
-				return 0, err
+				return 0, 0, err
 			}
 			allResults = append(allResults, result)
 			emitted := report.ShouldEmit(result, filterMode)
@@ -441,6 +449,10 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 				strongDelta++
 				strongHits++
 			}
+			if isAvailableHit(result) {
+				availableDelta++
+				availableHits++
+			}
 			event := progressEvent{
 				Index:         processedCount,
 				Candidate:     candidate,
@@ -450,19 +462,19 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 			}
 			if onAudit != nil {
 				if err := onAudit(event); err != nil {
-					return 0, err
+					return 0, 0, err
 				}
 			}
 			if onProgress != nil {
 				if err := onProgress(event); err != nil {
-					return 0, err
+					return 0, 0, err
 				}
 			}
 		}
-		return strongDelta, nil
+		return availableDelta, strongDelta, nil
 	}
 
-	if _, err := processBatch(initialCandidates); err != nil {
+	if _, _, err := processBatch(initialCandidates); err != nil {
 		return nil, nil, diagnostics, usageTotals, underfills, stop, err
 	}
 
@@ -471,11 +483,12 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 	}
 
 	stopController, err := openai.NewStopController(cfg.OpenAI.Model, openai.StopConditions{
-		MaxAccepted:      cfg.Generate.Count,
-		MaxCostUSD:       cfg.Generate.MaxCostUSD,
-		TargetStrongHits: cfg.Generate.TargetStrongHits,
-		MaxStallBatches:  cfg.Generate.MaxStallBatches,
-	}, strongHits)
+		MaxAccepted:         cfg.Generate.Count,
+		MaxCostUSD:          cfg.Generate.MaxCostUSD,
+		TargetAvailableHits: cfg.Generate.TargetAvailableHits,
+		TargetStrongHits:    cfg.Generate.TargetStrongHits,
+		MaxStallBatches:     cfg.Generate.MaxStallBatches,
+	}, availableHits, strongHits)
 	if err != nil {
 		return nil, nil, diagnostics, usageTotals, underfills, stop, err
 	}
@@ -505,11 +518,11 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 			QualityProfile:  cfg.Generate.QualityProfile,
 		})
 		diagnostics.MergeBatch(report)
-		strongDelta, err := processBatch(report.Accepted)
+		availableDelta, strongDelta, err := processBatch(report.Accepted)
 		if err != nil {
 			return candidates.BatchReport{}, err
 		}
-		if decision := stopController.ObserveBatch(len(report.Accepted), strongDelta, batch.Usage); decision != nil {
+		if decision := stopController.ObserveBatch(len(report.Accepted), availableDelta, strongDelta, batch.Usage); decision != nil {
 			stop = decision
 			return report, &openai.StopError{Snapshot: *decision}
 		}
@@ -684,6 +697,9 @@ func renderGenerationStopLines(stop *openai.StopSnapshot) []string {
 	if stop.TargetStrongHits > 0 {
 		lines = append(lines, fmt.Sprintf("  strong_hits: %d/%d", stop.StrongHits, stop.TargetStrongHits))
 	}
+	if stop.TargetAvailableHits > 0 {
+		lines = append(lines, fmt.Sprintf("  available_hits: %d/%d", stop.AvailableHits, stop.TargetAvailableHits))
+	}
 	if stop.MaxStallBatches > 0 {
 		lines = append(lines, fmt.Sprintf("  stall_batches: %d/%d", stop.StallBatches, stop.MaxStallBatches))
 	}
@@ -727,9 +743,11 @@ func buildRunSummary(backendName string, requestedZones []string, filterMode rep
 			AvoidPrefixes:           append([]string(nil), cfg.Generate.AvoidPrefixes...),
 			AvoidSuffixes:           append([]string(nil), cfg.Generate.AvoidSuffixes...),
 			MaxCostUSD:              cfg.Generate.MaxCostUSD,
+			TargetAvailableHits:     cfg.Generate.TargetAvailableHits,
 			TargetStrongHits:        cfg.Generate.TargetStrongHits,
 			MaxStallBatches:         cfg.Generate.MaxStallBatches,
 			AcceptedCount:           outcome.GeneratedAccepted,
+			AvailableHits:           outcome.AvailableHits,
 			UnderfilledBatches:      outcome.Underfills.Batches,
 			UnderfilledStems:        outcome.Underfills.Stems,
 			StopReason:              string(stopReason(outcome.Stop)),
@@ -748,6 +766,25 @@ func writeRunSummary(file *os.File, artifact runsummary.Artifact) error {
 		return nil
 	}
 	return runsummary.Write(file, artifact)
+}
+
+func isAvailableHit(result match.CandidateResult) bool {
+	for _, zone := range result.Zones {
+		if !zone.Present {
+			return true
+		}
+	}
+	return false
+}
+
+func countAvailableHits(results []match.CandidateResult) int {
+	count := 0
+	for _, result := range results {
+		if isAvailableHit(result) {
+			count++
+		}
+	}
+	return count
 }
 
 func renderGenerationEvent(event openai.Event) string {
@@ -832,7 +869,10 @@ func renderLiveProgress(event openai.Event) string {
 }
 
 func renderStopProgress(stop openai.StopSnapshot) string {
-	parts := make([]string, 0, 2)
+	parts := make([]string, 0, 3)
+	if stop.TargetAvailableHits > 0 {
+		parts = append(parts, fmt.Sprintf("available %d/%d", stop.AvailableHits, stop.TargetAvailableHits))
+	}
 	if stop.TargetStrongHits > 0 {
 		parts = append(parts, fmt.Sprintf("strong %d/%d", stop.StrongHits, stop.TargetStrongHits))
 	}

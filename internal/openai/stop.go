@@ -5,36 +5,41 @@ import "fmt"
 type StopReason string
 
 const (
-	StopReasonCountReached      StopReason = "count_reached"
-	StopReasonCostCapReached    StopReason = "cost_cap_reached"
-	StopReasonStrongHitsReached StopReason = "strong_hit_target_reached"
-	StopReasonStallReached      StopReason = "stall_limit_reached"
+	StopReasonCountReached         StopReason = "count_reached"
+	StopReasonCostCapReached       StopReason = "cost_cap_reached"
+	StopReasonAvailableHitsReached StopReason = "available_hit_target_reached"
+	StopReasonStrongHitsReached    StopReason = "strong_hit_target_reached"
+	StopReasonStallReached         StopReason = "stall_limit_reached"
 )
 
 type StopConditions struct {
-	MaxAccepted      int
-	MaxCostUSD       float64
-	TargetStrongHits int
-	MaxStallBatches  int
+	MaxAccepted         int
+	MaxCostUSD          float64
+	TargetAvailableHits int
+	TargetStrongHits    int
+	MaxStallBatches     int
 }
 
 type StopSnapshot struct {
-	Reason           StopReason
-	Accepted         int
-	StrongHits       int
-	StallBatches     int
-	MaxAccepted      int
-	MaxCostUSD       float64
-	TargetStrongHits int
-	MaxStallBatches  int
-	PricingAvailable bool
-	EstimatedCostUSD float64
+	Reason              StopReason
+	Accepted            int
+	AvailableHits       int
+	StrongHits          int
+	StallBatches        int
+	MaxAccepted         int
+	MaxCostUSD          float64
+	TargetAvailableHits int
+	TargetStrongHits    int
+	MaxStallBatches     int
+	PricingAvailable    bool
+	EstimatedCostUSD    float64
 }
 
 type StopController struct {
 	model      string
 	conditions StopConditions
 	accepted   int
+	available  int
 	strongHits int
 	stall      int
 	totals     UsageTotals
@@ -51,13 +56,14 @@ func (e *StopError) Error() string {
 	return fmt.Sprintf("generation stop requested: %s", e.Snapshot.Reason)
 }
 
-func NewStopController(model string, conditions StopConditions, initialStrongHits int) (*StopController, error) {
+func NewStopController(model string, conditions StopConditions, initialAvailableHits, initialStrongHits int) (*StopController, error) {
 	if conditions.MaxCostUSD > 0 && !HasPricing(model) {
 		return nil, fmt.Errorf("generate max cost requires known pricing for model %q", model)
 	}
 	controller := &StopController{
 		model:      model,
 		conditions: conditions,
+		available:  initialAvailableHits,
 		strongHits: initialStrongHits,
 	}
 	return controller, nil
@@ -68,15 +74,17 @@ func (c *StopController) Snapshot() StopSnapshot {
 		return StopSnapshot{}
 	}
 	return StopSnapshot{
-		Accepted:         c.accepted,
-		StrongHits:       c.strongHits,
-		StallBatches:     c.stall,
-		MaxAccepted:      c.conditions.MaxAccepted,
-		MaxCostUSD:       c.conditions.MaxCostUSD,
-		TargetStrongHits: c.conditions.TargetStrongHits,
-		MaxStallBatches:  c.conditions.MaxStallBatches,
-		PricingAvailable: c.totals.PricingAvailable,
-		EstimatedCostUSD: c.totals.EstimatedCostUSD,
+		Accepted:            c.accepted,
+		AvailableHits:       c.available,
+		StrongHits:          c.strongHits,
+		StallBatches:        c.stall,
+		MaxAccepted:         c.conditions.MaxAccepted,
+		MaxCostUSD:          c.conditions.MaxCostUSD,
+		TargetAvailableHits: c.conditions.TargetAvailableHits,
+		TargetStrongHits:    c.conditions.TargetStrongHits,
+		MaxStallBatches:     c.conditions.MaxStallBatches,
+		PricingAvailable:    c.totals.PricingAvailable,
+		EstimatedCostUSD:    c.totals.EstimatedCostUSD,
 	}
 }
 
@@ -87,11 +95,12 @@ func (c *StopController) InitialDecision() *StopSnapshot {
 	return c.check("")
 }
 
-func (c *StopController) ObserveBatch(accepted int, strongHitDelta int, usage *Usage) *StopSnapshot {
+func (c *StopController) ObserveBatch(accepted int, availableHitDelta int, strongHitDelta int, usage *Usage) *StopSnapshot {
 	if c == nil {
 		return nil
 	}
 	c.accepted += accepted
+	c.available += availableHitDelta
 	c.strongHits += strongHitDelta
 	if accepted == 0 && strongHitDelta == 0 {
 		c.stall++
@@ -107,6 +116,9 @@ func (c *StopController) check(_ string) *StopSnapshot {
 	switch {
 	case snapshot.MaxCostUSD > 0 && snapshot.PricingAvailable && snapshot.EstimatedCostUSD >= snapshot.MaxCostUSD:
 		snapshot.Reason = StopReasonCostCapReached
+		return &snapshot
+	case snapshot.TargetAvailableHits > 0 && snapshot.AvailableHits >= snapshot.TargetAvailableHits:
+		snapshot.Reason = StopReasonAvailableHitsReached
 		return &snapshot
 	case snapshot.TargetStrongHits > 0 && snapshot.StrongHits >= snapshot.TargetStrongHits:
 		snapshot.Reason = StopReasonStrongHitsReached
@@ -131,6 +143,8 @@ func StopReasonLabel(reason StopReason) string {
 	switch reason {
 	case StopReasonCostCapReached:
 		return "cost cap reached"
+	case StopReasonAvailableHitsReached:
+		return "available-hit target reached"
 	case StopReasonStrongHitsReached:
 		return "strong-hit target reached"
 	case StopReasonStallReached:

@@ -38,9 +38,11 @@ type Generation struct {
 	AvoidPrefixes           []string `json:"avoid_prefixes,omitempty"`
 	AvoidSuffixes           []string `json:"avoid_suffixes,omitempty"`
 	MaxCostUSD              float64  `json:"max_cost_usd,omitempty"`
+	TargetAvailableHits     int      `json:"target_available_hits,omitempty"`
 	TargetStrongHits        int      `json:"target_strong_hits,omitempty"`
 	MaxStallBatches         int      `json:"max_stall_batches,omitempty"`
 	AcceptedCount           int      `json:"accepted_count"`
+	AvailableHits           int      `json:"available_hits,omitempty"`
 	UnderfilledBatches      int      `json:"underfilled_batches,omitempty"`
 	UnderfilledStems        int      `json:"underfilled_stems,omitempty"`
 	StopReason              string   `json:"stop_reason,omitempty"`
