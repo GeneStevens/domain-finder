@@ -1,0 +1,4 @@
+; tiny net zone slice for exact-match tests
+example.net. 300 IN NS ns1.example.net.
+shared.example. 300 IN NS ns1.example.net.
+MIXEDCASE.NET. 300 IN A 192.0.2.21

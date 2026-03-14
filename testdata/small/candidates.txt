@@ -1,0 +1,7 @@
+# tiny candidate fixture
+
+missing.net
+EXAMPLE.NET.
+
+# another candidate
+example.com

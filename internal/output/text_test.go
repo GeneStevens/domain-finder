@@ -1,0 +1,88 @@
+package output
+
+import (
+	"bytes"
+	"testing"
+
+	"github.com/gene/domain-finder/internal/match"
+	"github.com/gene/domain-finder/internal/report"
+)
+
+func TestWriteText(t *testing.T) {
+	var buf bytes.Buffer
+	results := []match.CandidateResult{
+		{
+			Candidate:    "example.net",
+			PresentInAny: true,
+			AbsentInAll:  false,
+			Zones: []match.ZonePresence{
+				{Zone: "com", Present: false},
+				{Zone: "net", Present: true},
+			},
+		},
+		{
+			Candidate:    "missing.net",
+			PresentInAny: false,
+			AbsentInAll:  true,
+			Zones: []match.ZonePresence{
+				{Zone: "com", Present: false},
+				{Zone: "net", Present: false},
+			},
+		},
+	}
+
+	summary := report.Summary{
+		TotalCandidates: 2,
+		EmittedResults:  2,
+		PresentInAny:    1,
+		AbsentInAll:     1,
+	}
+
+	if err := WriteText(&buf, results, summary); err != nil {
+		t.Fatalf("WriteText() error = %v", err)
+	}
+
+	want := "" +
+		"summary\n" +
+		"  total_candidates: 2\n" +
+		"  emitted_results: 2\n" +
+		"  present_in_any: 1\n" +
+		"  absent_in_all: 1\n" +
+		"example.net\n" +
+		"  summary: present in at least one loaded zone\n" +
+		"  com: absent\n" +
+		"  net: present\n" +
+		"missing.net\n" +
+		"  summary: absent in all loaded zones\n" +
+		"  com: absent\n" +
+		"  net: absent\n"
+
+	if buf.String() != want {
+		t.Fatalf("WriteText() = %q, want %q", buf.String(), want)
+	}
+}
+
+func TestWriteTextIncludesFilteredOutWhenApplicable(t *testing.T) {
+	var buf bytes.Buffer
+	summary := report.Summary{
+		TotalCandidates: 3,
+		EmittedResults:  1,
+		PresentInAny:    2,
+		AbsentInAll:     1,
+	}
+
+	if err := WriteText(&buf, nil, summary); err != nil {
+		t.Fatalf("WriteText() error = %v", err)
+	}
+
+	want := "" +
+		"summary\n" +
+		"  total_candidates: 3\n" +
+		"  emitted_results: 1\n" +
+		"  present_in_any: 2\n" +
+		"  absent_in_all: 1\n" +
+		"  filtered_out: 2\n"
+	if buf.String() != want {
+		t.Fatalf("WriteText() = %q, want %q", buf.String(), want)
+	}
+}

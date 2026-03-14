@@ -1,0 +1,4 @@
+; tiny com zone slice for exact-match tests
+example.com. 300 IN NS ns1.example.com.
+shared.example. 300 IN NS ns1.example.com.
+mixedcase.com. 300 IN A 192.0.2.20
