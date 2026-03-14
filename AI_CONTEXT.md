@@ -103,6 +103,7 @@ available domains.
   - generation runs can also stop on explicit budget- and goal-shaped controls such as cost cap, strong-hit target, and stall limit
   - generated outputs must be stems only, not FQDNs
   - each batch has bounded fulfillment attempts
+  - exhausted refill attempts now produce underfilled-batch diagnostics instead of aborting the run
   - transient API failures have bounded retries inside one attempt
   - degraded model output is rejected without contaminating the candidate set
   - prompt guidance is not validation; generated stems still pass through the normal candidate validation gate
@@ -119,6 +120,7 @@ available domains.
     - stall limit
   - stall is currently defined as consecutive batches with zero newly accepted stems and zero increase in strong all-zone hits
   - text-mode generation runs now print a compact end-of-run diagnostics block summarizing dominant rejection categories
+  - text-mode generation runs also print compact underfill totals when one or more batches finish short
   - text-mode generation runs also print a compact `generation stop` block when a stop condition ends the run
   - dry-run uses the same config-resolution and prompt-builder path as a real run
 
@@ -154,6 +156,7 @@ available domains.
 - Audit logging is separate from both interactive and deterministic output paths, and records all checked stems whether or not they were visibly shown.
 - Run-summary output is separate from both audit logging and result output, and captures one structured run-level view of settings plus outcomes.
 - Run-summary output also captures configured generation stop conditions and the actual stop reason when generation is used.
+- Run-summary output also captures underfilled-batch totals for generated runs.
 - When OpenAI returns `usage`, generation runs also accumulate token totals and estimated cost from a small built-in pricing table.
 - JSONL bypasses `termui` entirely.
 

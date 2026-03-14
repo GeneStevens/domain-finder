@@ -190,14 +190,18 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - request the batch target
   - normalize and dedupe through the existing stem pipeline
   - if too few usable new stems survive, try again for the remainder
-  - stop with a clear error when the attempt budget is exhausted
+  - if refill attempts are exhausted, keep any accepted stems, record the batch as underfilled, and continue to the next batch
 - Transient OpenAI failures such as rate limits or server errors are retried a bounded number of times
 - Poor model output such as duplicates, FQDNs, punctuation, empty values, or noisy text is treated as degraded batch quality rather than silently corrupting the candidate pipeline
 - Generated stems containing banned substrings are rejected before lookup and counted as unusable batch output
 - Generated stems hitting banned prefixes or banned suffixes are also rejected before lookup
 - Generated stems can also be rejected by the configured quality profile before lookup, and those rejections are counted separately in generation progress
 - Interactive and text-mode generation runs emit concise stderr status lines showing batch requests, accepted/rejected counts, retries, and completion/failure
+- Underfilled batches are now diagnostic, not fatal:
+  - batch status lines can append `underfilled N`
+  - the run keeps going until an actual stop condition ends it
 - At the end of a generation run, text-mode runs also print a compact `generation diagnostics` block summarizing dominant rejection categories across the whole run
+- Those same runs also print a compact `generation underfill` block when any batches finished short
 - The same text-mode runs now also print a compact `generation usage` block with:
   - model
   - input/output token totals
@@ -263,6 +267,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - final checked/emitted/strong-hit counts
   - generation settings when generation was used
   - configured stop-condition settings and final stop reason when generation was used
+  - underfilled-batch totals when generation was used
   - generation token totals and estimated cost when usage data was available
   - aggregated generation diagnostics and rejection categories
 - Use it when you want one stable artifact per run for diffing, archiving, or comparing prompt/profile changes over time

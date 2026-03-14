@@ -56,7 +56,7 @@ func TestFulfillDuplicateHeavyBatch(t *testing.T) {
 	fulfiller.Sleep = func(context.Context, time.Duration) error { return nil }
 
 	var accepted []string
-	_, _, err := fulfiller.Fulfill(context.Background(), "short brand stems", 2, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
+	_, _, _, err := fulfiller.Fulfill(context.Background(), "short brand stems", 2, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
 		report := collector.AddAllReportLimited(batch.Stems, limit)
 		accepted = append(accepted, report.Accepted...)
 		return report, nil
@@ -87,7 +87,7 @@ func TestFulfillRetryThenSuccess(t *testing.T) {
 	fulfiller.Sleep = func(context.Context, time.Duration) error { return nil }
 
 	var events []Event
-	_, _, err := fulfiller.Fulfill(context.Background(), "short brand stems", 2, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
+	_, _, _, err := fulfiller.Fulfill(context.Background(), "short brand stems", 2, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
 		return candidates.NewCollector().AddAllReportLimited(batch.Stems, limit), nil
 	}, func(event Event) error {
 		events = append(events, event)
@@ -118,7 +118,7 @@ func TestFulfillRetryThenFail(t *testing.T) {
 	})
 	fulfiller.Sleep = func(context.Context, time.Duration) error { return nil }
 
-	_, _, err := fulfiller.Fulfill(context.Background(), "short brand stems", 2, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
+	_, _, _, err := fulfiller.Fulfill(context.Background(), "short brand stems", 2, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
 		return candidates.NewCollector().AddAllReportLimited(batch.Stems, limit), nil
 	}, nil)
 	if err == nil {
@@ -133,11 +133,12 @@ func TestFulfillRetryThenFail(t *testing.T) {
 	}
 }
 
-func TestFulfillUndersizedUsableBatchFailsWhenBudgetExhausted(t *testing.T) {
+func TestFulfillUnderfilledBatchContinues(t *testing.T) {
 	generator := &scriptedGenerator{
 		responses: []scriptedResponse{
 			{result: BatchResult{Stems: []string{"brandfoo", "brandfoo"}}},
 			{result: BatchResult{Stems: []string{"brandfoo", "brandfoo"}}},
+			{result: BatchResult{Stems: []string{"noviq", "traktor"}}},
 		},
 	}
 	collector := candidates.NewCollector()
@@ -148,18 +149,66 @@ func TestFulfillUndersizedUsableBatchFailsWhenBudgetExhausted(t *testing.T) {
 	})
 	fulfiller.Sleep = func(context.Context, time.Duration) error { return nil }
 
-	_, _, err := fulfiller.Fulfill(context.Background(), "short brand stems", 2, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
-		return collector.AddAllReportLimited(batch.Stems, limit), nil
+	var accepted []string
+	var events []Event
+	_, underfills, _, err := fulfiller.Fulfill(context.Background(), "short brand stems", 2, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
+		report := collector.AddAllReportLimited(batch.Stems, limit)
+		accepted = append(accepted, report.Accepted...)
+		return report, nil
+	}, func(event Event) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Fulfill() error = %v", err)
+	}
+	if !reflect.DeepEqual(accepted, []string{"brandfoo", "noviq"}) {
+		t.Fatalf("accepted = %#v, want [brandfoo noviq]", accepted)
+	}
+	if underfills.Batches != 1 || underfills.Stems != 1 {
+		t.Fatalf("underfills = %#v, want 1 batch and 1 stem", underfills)
+	}
+	foundUnderfill := false
+	for _, event := range events {
+		if event.Type == EventBatchResult && event.Underfilled == 1 {
+			foundUnderfill = true
+		}
+	}
+	if !foundUnderfill {
+		t.Fatalf("events = %#v, want underfilled batch event", events)
+	}
+}
+
+func TestFulfillMultipleUnderfilledBatchesContinueUntilProgress(t *testing.T) {
+	generator := &scriptedGenerator{
+		responses: []scriptedResponse{
+			{result: BatchResult{Stems: []string{"bad.name", "still bad"}}},
+			{result: BatchResult{Stems: []string{"also bad", "bad.again"}}},
+			{result: BatchResult{Stems: []string{"noviq", "traktor"}}},
+		},
+	}
+	collector := candidates.NewCollector()
+	fulfiller := NewFulfiller(generator, config.GenerateConfig{
+		BatchSize:           2,
+		MaxAttemptsPerBatch: 2,
+		RetryCount:          0,
+	})
+	fulfiller.Sleep = func(context.Context, time.Duration) error { return nil }
+
+	var accepted []string
+	_, underfills, _, err := fulfiller.Fulfill(context.Background(), "short brand stems", 2, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
+		report := collector.AddAllReportLimited(batch.Stems, limit)
+		accepted = append(accepted, report.Accepted...)
+		return report, nil
 	}, nil)
-	if err == nil {
-		t.Fatal("Fulfill() error = nil, want fulfillment failure")
+	if err != nil {
+		t.Fatalf("Fulfill() error = %v", err)
 	}
-	var fulfillmentErr *FulfillmentError
-	if !errors.As(err, &fulfillmentErr) {
-		t.Fatalf("Fulfill() error = %v, want FulfillmentError", err)
+	if !reflect.DeepEqual(accepted, []string{"noviq", "traktor"}) {
+		t.Fatalf("accepted = %#v, want [noviq traktor]", accepted)
 	}
-	if fulfillmentErr.Accepted != 1 || fulfillmentErr.Requested != 2 {
-		t.Fatalf("FulfillmentError = %#v, want accepted 1 requested 2", fulfillmentErr)
+	if underfills.Batches != 1 || underfills.Stems != 2 {
+		t.Fatalf("underfills = %#v, want 1 batch and 2 stems", underfills)
 	}
 }
 
@@ -181,7 +230,7 @@ func TestFulfillBannedSubstringsAreRejected(t *testing.T) {
 
 	var accepted []string
 	var events []Event
-	_, _, err := fulfiller.Fulfill(context.Background(), "short brand stems", 2, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
+	_, _, _, err := fulfiller.Fulfill(context.Background(), "short brand stems", 2, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
 		report := collector.AddGeneratedReportLimited(batch.Stems, limit, candidates.GeneratedPolicy{
 			AvoidSubstrings: []string{"dev", "cloud"},
 		})
@@ -220,7 +269,7 @@ func TestFulfillQualityRejectedStems(t *testing.T) {
 
 	var accepted []string
 	var events []Event
-	_, _, err := fulfiller.Fulfill(context.Background(), "industrial infrastructure stems", 2, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
+	_, _, _, err := fulfiller.Fulfill(context.Background(), "industrial infrastructure stems", 2, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
 		report := collector.AddGeneratedReportLimited(batch.Stems, limit, candidates.GeneratedPolicy{
 			QualityProfile: "industrial",
 		})
@@ -264,7 +313,7 @@ func TestFulfillAccumulatesUsageTotals(t *testing.T) {
 	fulfiller.Sleep = func(context.Context, time.Duration) error { return nil }
 
 	var events []Event
-	totals, _, err := fulfiller.Fulfill(context.Background(), "industrial infrastructure stems", 3, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
+	totals, _, _, err := fulfiller.Fulfill(context.Background(), "industrial infrastructure stems", 3, func(batch BatchResult, limit int) (candidates.BatchReport, error) {
 		return collector.AddGeneratedReportLimited(batch.Stems, limit, candidates.GeneratedPolicy{}), nil
 	}, func(event Event) error {
 		events = append(events, event)

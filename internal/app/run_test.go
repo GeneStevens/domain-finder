@@ -1943,7 +1943,7 @@ func TestRunTextWorkflowWithDegradedGeneratedBatch(t *testing.T) {
 	}
 }
 
-func TestRunTextWorkflowGeneratedFailureReportsClearly(t *testing.T) {
+func TestRunTextWorkflowContinuesAfterUnderfilledBatch(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  max_attempts: 2\n  retry_count: 0\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -1953,6 +1953,7 @@ func TestRunTextWorkflowGeneratedFailureReportsClearly(t *testing.T) {
 		responses: []fakeStemResponse{
 			{result: openai.BatchResult{Stems: []string{"missing", "bad.name"}}},
 			{result: openai.BatchResult{Stems: []string{"missing", "still bad"}}},
+			{result: openai.BatchResult{Stems: []string{"noviq", "traktor"}}},
 		},
 	}
 
@@ -1974,13 +1975,76 @@ func TestRunTextWorkflowGeneratedFailureReportsClearly(t *testing.T) {
 		"-candidate", "missing",
 		"-generate", "short invented brand stems",
 	}, strings.NewReader(""), &stdout, &stderr)
-	if err == nil {
-		t.Fatal("Run() error = nil, want generation failure")
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
 	}
-	if !strings.Contains(err.Error(), "generation produced 0 usable stems out of 2 requested") {
-		t.Fatalf("error = %v, want bounded fulfillment failure", err)
+	if !strings.Contains(stdout.String(), "noviq\n") || !strings.Contains(stdout.String(), "traktor\n") {
+		t.Fatalf("stdout = %q, want accepted generated stems preserved", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "generation: failed after accepting 0 of 2 requested stems") {
-		t.Fatalf("stderr = %q, want clear failure notice", stderr.String())
+	progress := stderr.String()
+	for _, fragment := range []string{
+		"generation: batch 1 attempt 1 accepted 0, invalid 1, banned 0, quality_rejected 0, duplicates 1, need 2 more",
+		"generation: batch 1 attempt 2 accepted 0, invalid 1, banned 0, quality_rejected 0, duplicates 1, need 2 more",
+		"generation: batch 1 attempt 2 accepted 0, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 2 more | underfilled 2",
+		"generation: batch 2 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more",
+		"generation underfill",
+		"underfilled_batches: 1",
+		"underfilled_stems: 2",
+	} {
+		if !strings.Contains(progress, fragment) {
+			t.Fatalf("stderr missing %q:\n%s", fragment, progress)
+		}
+	}
+}
+
+func TestRunSummaryIncludesUnderfillStatistics(t *testing.T) {
+	dir := t.TempDir()
+	summaryPath := filepath.Join(dir, "run-summary.json")
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  max_attempts: 2\n  retry_count: 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		responses: []fakeStemResponse{
+			{result: openai.BatchResult{Stems: []string{"missing", "bad.name"}}},
+			{result: openai.BatchResult{Stems: []string{"missing", "still bad"}}},
+			{result: openai.BatchResult{Stems: []string{"noviq", "traktor"}}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-run-summary", summaryPath,
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-candidate", "missing",
+		"-generate", "short invented brand stems",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	data, err := os.ReadFile(summaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\n%s", err, string(data))
+	}
+	generation := got["generation"].(map[string]any)
+	if generation["underfilled_batches"] != float64(1) || generation["underfilled_stems"] != float64(2) {
+		t.Fatalf("generation = %#v, want underfill totals", generation)
 	}
 }
