@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -95,5 +96,58 @@ func TestBuildContractAndRender(t *testing.T) {
 		if !strings.Contains(rendered, fragment) {
 			t.Fatalf("RenderContract() missing %q:\n%s", fragment, rendered)
 		}
+	}
+}
+
+func TestRenderContractJSON(t *testing.T) {
+	builder := PromptBuilder{}
+	contract := builder.BuildContract(config.Config{
+		OpenAI: config.OpenAIConfig{
+			Model: "gpt-4o-mini",
+		},
+		Generate: config.GenerateConfig{
+			Count:               8,
+			BatchSize:           4,
+			MaxAttemptsPerBatch: 3,
+			RetryCount:          2,
+			MaxLength:           12,
+			MaxSyllables:        3,
+			Prefix:              "dev",
+			Suffix:              "io",
+			Style:               "developer tool",
+		},
+	}, "short product name stems")
+
+	raw, err := RenderContractJSON(contract)
+	if err != nil {
+		t.Fatalf("RenderContractJSON() error = %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if got["model"] != "gpt-4o-mini" {
+		t.Fatalf("model = %#v, want gpt-4o-mini", got["model"])
+	}
+	if got["generate_count"] != float64(8) {
+		t.Fatalf("generate_count = %#v, want 8", got["generate_count"])
+	}
+	if got["batch_size"] != float64(4) {
+		t.Fatalf("batch_size = %#v, want 4", got["batch_size"])
+	}
+	if got["theme"] != "short product name stems" {
+		t.Fatalf("theme = %#v, want short product name stems", got["theme"])
+	}
+	constraints, ok := got["constraints"].(map[string]any)
+	if !ok {
+		t.Fatalf("constraints = %#v, want object", got["constraints"])
+	}
+	if constraints["max_length"] != float64(12) || constraints["prefix"] != "dev" || constraints["suffix"] != "io" {
+		t.Fatalf("constraints = %#v, want populated stable constraint object", constraints)
+	}
+	if got["system_prompt"] == "" || got["user_prompt"] == "" {
+		t.Fatalf("prompts missing in %#v", got)
 	}
 }

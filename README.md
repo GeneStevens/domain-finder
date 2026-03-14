@@ -106,6 +106,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-prefix` prefers stems that start with specific text
 - `-generate-suffix` prefers stems that end with specific text
 - `-generate-dry-run` prints the fully resolved generation contract and exits before any OpenAI call
+- `-generate-dry-run-format text|json` chooses human-readable or machine-readable inspection output
 - `generate.max_attempts` bounds how many attempts each batch gets to satisfy its target
 - `generate.retry_count` bounds transient API retries inside one attempt
 - Generated values are treated as stems, not FQDNs
@@ -125,6 +126,8 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 
 - `-generate-dry-run` is an inspection mode for prompt tuning
 - It prints the resolved model, generation counts, retry policy, theme, style, structural constraints, and the final prompt-builder output
+- `-generate-dry-run-format text` keeps the current readable inspection block
+- `-generate-dry-run-format json` emits a stable JSON contract for diffing, archiving, and tooling
 - It exits before backend loading, OpenAI client creation, or any network call
 - It is intended for prompt-contract inspection, not candidate lookup
 
@@ -283,6 +286,21 @@ env GOCACHE=/tmp/domain-finder-gocache \
 go run ./cmd/domain-finder \
   -generate "short product name stems" \
   -generate-dry-run \
+  -generate-style "developer tool" \
+  -generate-max-length 12 \
+  -generate-max-syllables 3 \
+  -generate-prefix dev \
+  -generate-suffix io
+```
+
+Machine-readable dry-run contract:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -generate "short product name stems" \
+  -generate-dry-run \
+  -generate-dry-run-format json \
   -generate-style "developer tool" \
   -generate-max-length 12 \
   -generate-max-syllables 3 \

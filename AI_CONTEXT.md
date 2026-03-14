@@ -90,6 +90,7 @@ available domains.
 - Generation model:
   - `-generate` enables OpenAI stem generation
   - `-generate-dry-run` inspects the resolved generation contract without creating a client or calling the network
+  - `-generate-dry-run-format text|json` selects the inspection renderer
   - generation happens in batches
   - each batch is normalized, deduped, and processed before the next batch
   - `internal/openai` owns a dedicated prompt builder for the generation contract
@@ -135,6 +136,7 @@ available domains.
 - `-candidate-stdin` loads stems from stdin.
 - `-generate <prompt>` requests OpenAI-generated stems.
 - `-generate-dry-run` prints the resolved prompt contract and exits without an API call.
+- `-generate-dry-run-format text|json` selects human-readable or machine-readable contract inspection.
 - `-generate-count`, `-generate-batch-size`, and `-generate-model` override generation config.
 - `-generate-style`, `-generate-max-length`, `-generate-max-syllables`, `-generate-prefix`, and `-generate-suffix` steer prompt construction.
 - `generate.max_attempts` and `generate.retry_count` harden generation behavior from YAML/env config.

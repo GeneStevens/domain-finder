@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -126,6 +127,49 @@ func RenderContract(contract Contract) string {
 	fmt.Fprintf(&out, "user prompt\n")
 	fmt.Fprintf(&out, "%s\n", contract.UserPrompt)
 	return out.String()
+}
+
+// RenderContractJSON produces a stable machine-readable JSON representation of
+// the fully resolved generation contract.
+func RenderContractJSON(contract Contract) ([]byte, error) {
+	type constraints struct {
+		MaxLength    int    `json:"max_length,omitempty"`
+		MaxSyllables int    `json:"max_syllables,omitempty"`
+		Prefix       string `json:"prefix,omitempty"`
+		Suffix       string `json:"suffix,omitempty"`
+	}
+	type view struct {
+		Model         string      `json:"model"`
+		GenerateCount int         `json:"generate_count"`
+		BatchSize     int         `json:"batch_size"`
+		MaxAttempts   int         `json:"max_attempts"`
+		RetryCount    int         `json:"retry_count"`
+		Theme         string      `json:"theme"`
+		Style         string      `json:"style,omitempty"`
+		Constraints   constraints `json:"constraints"`
+		SystemPrompt  string      `json:"system_prompt"`
+		UserPrompt    string      `json:"user_prompt"`
+	}
+
+	payload := view{
+		Model:         contract.Model,
+		GenerateCount: contract.GenerateCount,
+		BatchSize:     contract.BatchSize,
+		MaxAttempts:   contract.MaxAttemptsPerBatch,
+		RetryCount:    contract.RetryCount,
+		Theme:         contract.Theme,
+		Style:         contract.Style,
+		Constraints: constraints{
+			MaxLength:    contract.MaxLength,
+			MaxSyllables: contract.MaxSyllables,
+			Prefix:       contract.Prefix,
+			Suffix:       contract.Suffix,
+		},
+		SystemPrompt: contract.SystemPrompt,
+		UserPrompt:   contract.UserPrompt,
+	}
+
+	return json.MarshalIndent(payload, "", "  ")
 }
 
 func renderOptional(value string) string {

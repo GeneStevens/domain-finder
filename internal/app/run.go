@@ -51,6 +51,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	candidateStdin := fs.Bool("candidate-stdin", false, "read candidates from stdin")
 	generatePrompt := fs.String("generate", "", "generate candidate stems from this prompt")
 	generateDryRun := fs.Bool("generate-dry-run", false, "print the resolved generation contract and exit without calling OpenAI")
+	generateDryRunFormat := fs.String("generate-dry-run-format", "text", "dry-run inspection format: text | json")
 	generateStyle := fs.String("generate-style", "", "style guidance for generation, such as invented SaaS or developer tool")
 	generateCount := fs.Int("generate-count", 0, "total number of stems to generate")
 	generateBatchSize := fs.Int("generate-batch-size", 0, "number of stems requested per generation batch")
@@ -79,6 +80,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if *generateDryRun && trimmedGeneratePrompt == "" {
 		fs.Usage()
 		return fmt.Errorf("-generate-dry-run requires -generate")
+	}
+	if *generateDryRun && *generateDryRunFormat != "text" && *generateDryRunFormat != "json" {
+		return fmt.Errorf("unsupported -generate-dry-run-format %q: want text or json", *generateDryRunFormat)
 	}
 	if len(zones) == 0 && !*generateDryRun {
 		fs.Usage()
@@ -146,8 +150,20 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	}
 	if *generateDryRun {
 		contract := openai.PromptBuilder{}.BuildContract(cfg, trimmedGeneratePrompt)
-		_, err := fmt.Fprint(writer, openai.RenderContract(contract))
-		return err
+		switch *generateDryRunFormat {
+		case "text":
+			_, err := fmt.Fprint(writer, openai.RenderContract(contract))
+			return err
+		case "json":
+			raw, err := openai.RenderContractJSON(contract)
+			if err != nil {
+				return err
+			}
+			_, err = writer.Write(append(raw, '\n'))
+			return err
+		default:
+			return fmt.Errorf("unsupported -generate-dry-run-format %q: want text or json", *generateDryRunFormat)
+		}
 	}
 	if trimmedGeneratePrompt != "" {
 		generator, err = newStemGenerator(cfg)

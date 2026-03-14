@@ -739,6 +739,129 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 	}
 }
 
+func TestRunGenerateDryRunJSONOutput(t *testing.T) {
+	dir := t.TempDir()
+	configBody := "" +
+		"openai:\n" +
+		"  model: yaml-model\n" +
+		"generate:\n" +
+		"  count: 4\n" +
+		"  batch_size: 2\n" +
+		"  max_attempts: 3\n" +
+		"  retry_count: 1\n" +
+		"  max_length: 10\n" +
+		"  max_syllables: 2\n" +
+		"  prefix: neo\n" +
+		"  suffix: ix\n" +
+		"  style: security product\n"
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) {
+		t.Fatal("newStemGenerator should not be called during dry run")
+		return nil, nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-generate", "short product stems",
+		"-generate-dry-run",
+		"-generate-dry-run-format", "json",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, stdout.String())
+	}
+	if got["model"] != "yaml-model" {
+		t.Fatalf("model = %#v, want yaml-model", got["model"])
+	}
+	if got["generate_count"] != float64(4) || got["batch_size"] != float64(2) {
+		t.Fatalf("counts = %#v, want 4/2", got)
+	}
+	if got["theme"] != "short product stems" || got["style"] != "security product" {
+		t.Fatalf("theme/style = %#v, want resolved prompt values", got)
+	}
+	constraints, ok := got["constraints"].(map[string]any)
+	if !ok {
+		t.Fatalf("constraints = %#v, want object", got["constraints"])
+	}
+	if constraints["max_length"] != float64(10) || constraints["max_syllables"] != float64(2) || constraints["prefix"] != "neo" || constraints["suffix"] != "ix" {
+		t.Fatalf("constraints = %#v, want stable constraint shape", constraints)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty dry-run stderr", stderr.String())
+	}
+}
+
+func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
+	dir := t.TempDir()
+	configBody := "" +
+		"openai:\n" +
+		"  model: yaml-model\n" +
+		"generate:\n" +
+		"  count: 4\n" +
+		"  batch_size: 2\n" +
+		"  max_length: 9\n" +
+		"  max_syllables: 2\n" +
+		"  prefix: neo\n" +
+		"  suffix: ix\n" +
+		"  style: security product\n"
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	defer func() { getWorkingDir = originalGetWorkingDir }()
+	getWorkingDir = func() (string, error) { return dir, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-generate", "short product stems",
+		"-generate-dry-run",
+		"-generate-dry-run-format", "json",
+		"-generate-model", "cli-model",
+		"-generate-count", "8",
+		"-generate-batch-size", "4",
+		"-generate-max-length", "12",
+		"-generate-max-syllables", "3",
+		"-generate-prefix", "dev",
+		"-generate-suffix", "io",
+		"-generate-style", "developer tool",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\noutput=%s", err, stdout.String())
+	}
+	if got["model"] != "cli-model" || got["generate_count"] != float64(8) || got["batch_size"] != float64(4) {
+		t.Fatalf("top-level overrides = %#v, want CLI values", got)
+	}
+	constraints := got["constraints"].(map[string]any)
+	if constraints["max_length"] != float64(12) || constraints["max_syllables"] != float64(3) || constraints["prefix"] != "dev" || constraints["suffix"] != "io" {
+		t.Fatalf("constraints = %#v, want CLI override values", constraints)
+	}
+	if got["style"] != "developer tool" {
+		t.Fatalf("style = %#v, want developer tool", got["style"])
+	}
+}
+
 func TestRunGenerateDryRunRequiresPrompt(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
