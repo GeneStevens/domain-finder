@@ -202,13 +202,16 @@ func TestRunTextWorkflowInteractiveOverride(t *testing.T) {
 	wantProgress := []string{
 		"Zone files loaded: COM, NET\n",
 		"Searching 2 stems | filter: all\n",
+		"available_zones",
+		"result",
 		"checking: example... [1/2]",
 		"checking: missing... [2/2]",
 		"example",
-		"NET",
+		"(none)",
+		"taken",
 		"missing",
 		"COM NET",
-		"✓",
+		"all ✓",
 		"Done: checked 2 | emitted 2 | strong 1\n",
 	}
 	for _, fragment := range wantProgress {
@@ -242,12 +245,14 @@ func TestRunTextWorkflowWithCandidateFileInteractive(t *testing.T) {
 	progress := stderr.String()
 	wantProgress := []string{
 		"Searching 3 stems | filter: absent-in-all\n",
+		"available_zones",
+		"result",
 		"checking: missing... [1/3]",
 		"checking: example... [2/3]",
 		"checking: mixedcase... [3/3]",
 		"missing",
 		"COM NET",
-		"✓",
+		"all ✓",
 		"Done: checked 3 | emitted 1 | strong 1\n",
 	}
 	for _, fragment := range wantProgress {
@@ -297,7 +302,7 @@ func TestRunInteractiveColorOverride(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty interactive stdout", stdout.String())
 	}
-	if !strings.Contains(stderr.String(), "missing") || !strings.Contains(stderr.String(), "\x1b[1;97;42m✓\x1b[0m") {
+	if !strings.Contains(stderr.String(), "missing") || !strings.Contains(stderr.String(), "\x1b[1;97;42mall ✓\x1b[0m") {
 		t.Fatalf("stderr = %q, want ANSI strong-hit styling", stderr.String())
 	}
 }

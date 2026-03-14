@@ -12,12 +12,13 @@ import (
 
 // Console renders a lightweight streaming interactive console on stderr.
 type Console struct {
-	w         io.Writer
-	zones     []string
-	color     bool
-	candWidth int
-	zoneWidth int
-	lastLen   int
+	w           io.Writer
+	zones       []string
+	color       bool
+	candWidth   int
+	zoneWidth   int
+	statusWidth int
+	lastLen     int
 }
 
 // NewConsole creates a new streaming console.
@@ -28,16 +29,26 @@ func NewConsole(w io.Writer, zones []string, candidates []string, color bool) *C
 			width = len(candidate)
 		}
 	}
-	zoneWidth := len("available")
+	zoneWidth := len("available_zones")
 	if joined := strings.Join(upperZones(zones), " "); len(joined) > zoneWidth {
 		zoneWidth = len(joined)
 	}
+	if len("(none)") > zoneWidth {
+		zoneWidth = len("(none)")
+	}
+	statusWidth := len("result")
+	for _, value := range []string{"all ✓", "partial", "taken"} {
+		if len(value) > statusWidth {
+			statusWidth = len(value)
+		}
+	}
 	return &Console{
-		w:         w,
-		zones:     zones,
-		color:     color,
-		candWidth: width,
-		zoneWidth: zoneWidth,
+		w:           w,
+		zones:       zones,
+		color:       color,
+		candWidth:   width,
+		zoneWidth:   zoneWidth,
+		statusWidth: statusWidth,
 	}
 }
 
@@ -90,7 +101,7 @@ func (c *Console) Start(total int, filter report.FilterMode) error {
 	if _, err := fmt.Fprintln(c.w); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(c.w, "%-*s  %-*s  %s\n", c.candWidth, "stem", c.zoneWidth, "available", "hit"); err != nil {
+	if _, err := fmt.Fprintf(c.w, "%-*s  %-*s  %-*s\n", c.candWidth, "stem", c.zoneWidth, "available_zones", c.statusWidth, "result"); err != nil {
 		return err
 	}
 	return nil
@@ -167,21 +178,36 @@ func (c *Console) rewrite(line string) error {
 }
 
 func (c *Console) formatRow(result match.CandidateResult) string {
+	availableText := c.availableZonesText(result)
+	statusText := c.statusText(result)
+	return fmt.Sprintf("%-*s  %-*s  %-*s", c.candWidth, result.Candidate, c.zoneWidth, availableText, c.statusWidth, statusText)
+}
+
+func (c *Console) availableZonesText(result match.CandidateResult) string {
 	available := make([]string, 0, len(result.Zones))
 	for _, zone := range result.Zones {
 		if !zone.Present {
 			available = append(available, strings.ToUpper(zone.Zone))
 		}
 	}
-	availableText := "-"
-	if len(available) > 0 {
-		availableText = strings.Join(available, " ")
+	if len(available) == 0 {
+		return "(none)"
 	}
-	marker := ""
-	if result.AbsentInAll {
-		marker = c.styleStrong("✓")
+	return strings.Join(available, " ")
+}
+
+func (c *Console) statusText(result match.CandidateResult) string {
+	switch {
+	case result.AbsentInAll:
+		return c.styleStrong("all ✓")
+	case result.PresentInAny:
+		if c.availableZonesText(result) == "(none)" {
+			return "taken"
+		}
+		return "partial"
+	default:
+		return "partial"
 	}
-	return fmt.Sprintf("%-*s  %-*s  %s", c.candWidth, result.Candidate, c.zoneWidth, availableText, marker)
 }
 
 func upperZones(zones []string) []string {

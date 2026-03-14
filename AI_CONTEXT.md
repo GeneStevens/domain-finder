@@ -120,6 +120,11 @@ available domains.
   - a small startup header
   - a reusable `checking:` stem line
   - one-line durable emitted stem rows
+  - an `available_zones` column that explicitly lists which requested zones are available
+  - a compact `result` column:
+    - `all ✓` for strongest all-zone hits
+    - `partial` for mixed availability
+    - `taken` when no requested zones are available
   - optional ANSI emphasis for strongest all-zone hits
   - a compact final completion line
 - Interactive mode keeps the compact human-facing table on `stderr`; deterministic detailed output is preserved for non-interactive mode and `-out` files.

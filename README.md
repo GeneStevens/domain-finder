@@ -158,7 +158,15 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - Shows one reusable ephemeral `checking: ...` line while checking
 - Prints exactly one durable line per emitted stem
 - Uses a compact table layout tuned for scanability
-- Highlights strongest all-zone hits with a success marker and optional ANSI styling
+- Header columns are:
+  - `stem`: the stem being evaluated
+  - `available_zones`: which requested zones are currently available for that stem
+  - `result`: compact status semantics
+- Durable rows use explicit status language:
+  - `all ✓` means all requested zones are available for that stem
+  - `partial` means only some requested zones are available
+  - `taken` means none of the requested zones are available
+- Strongest all-zone hits stay visually strongest with the success marker and optional ANSI styling
 - Clears the active line cleanly on completion and prints a compact final status
 
 ## stdout / stderr / file behavior
