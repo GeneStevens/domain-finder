@@ -1,4 +1,5 @@
 # Copy to domain-finder.yaml and customize for your environment.
+# This is meant to be a practical blueprint, not just a minimal stub.
 
 postgres:
   dsn: ""
@@ -18,3 +19,5 @@ generate:
   suffix: ""
   style: industrial infrastructure naming
   avoid_substrings: dev,code,stack,cloud,sync,ops,grid,craft,build,tool,lab,forge,flow
+  avoid_prefixes: dev,neo
+  avoid_suffixes: io,ia,ora,iva,ara

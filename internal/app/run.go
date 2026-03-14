@@ -66,6 +66,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	generateSuffix := fs.String("generate-suffix", "", "prefer generated stems ending with this text")
 	generatePrefix := fs.String("generate-prefix", "", "prefer generated stems starting with this text")
 	generateAvoidSubstrings := fs.String("generate-avoid-substrings", "", "comma-separated substrings that generated stems must not contain")
+	generateAvoidPrefixes := fs.String("generate-avoid-prefixes", "", "comma-separated prefixes that generated stems must not start with")
+	generateAvoidSuffixes := fs.String("generate-avoid-suffixes", "", "comma-separated suffixes that generated stems must not end with")
 	generateModel := fs.String("generate-model", "", "OpenAI model for stem generation")
 	forceInteractive := fs.Bool("interactive", false, "force interactive text console")
 	noInteractive := fs.Bool("no-interactive", false, "disable interactive text console")
@@ -178,6 +180,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			GeneratePrefix:          strings.TrimSpace(*generatePrefix),
 			GenerateStyle:           strings.TrimSpace(*generateStyle),
 			GenerateAvoidSubstrings: strings.TrimSpace(*generateAvoidSubstrings),
+			GenerateAvoidPrefixes:   strings.TrimSpace(*generateAvoidPrefixes),
+			GenerateAvoidSuffixes:   strings.TrimSpace(*generateAvoidSuffixes),
 			PostgresDSN:             strings.TrimSpace(*pgDSN),
 		})
 		if err != nil {
@@ -424,6 +428,8 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 	usageTotals, err := fulfiller.Fulfill(ctx, generatePrompt, cfg.Generate.Count, func(rawBatch []string, limit int) (candidates.BatchReport, error) {
 		report := collector.AddGeneratedReportLimited(rawBatch, limit, candidates.GeneratedPolicy{
 			AvoidSubstrings: cfg.Generate.AvoidSubstrings,
+			AvoidPrefixes:   cfg.Generate.AvoidPrefixes,
+			AvoidSuffixes:   cfg.Generate.AvoidSuffixes,
 			QualityProfile:  cfg.Generate.QualityProfile,
 		})
 		diagnostics.MergeBatch(report)
@@ -554,6 +560,8 @@ func buildRunSummary(backendName string, requestedZones []string, filterMode rep
 			RetryCount:        cfg.Generate.RetryCount,
 			QualityProfile:    cfg.Generate.QualityProfile,
 			AvoidSubstrings:   append([]string(nil), cfg.Generate.AvoidSubstrings...),
+			AvoidPrefixes:     append([]string(nil), cfg.Generate.AvoidPrefixes...),
+			AvoidSuffixes:     append([]string(nil), cfg.Generate.AvoidSuffixes...),
 			AcceptedCount:     outcome.GeneratedAccepted,
 			InputTokens:       outcome.UsageTotals.InputTokens,
 			OutputTokens:      outcome.UsageTotals.OutputTokens,

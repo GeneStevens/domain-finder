@@ -10,10 +10,14 @@ import (
 
 func TestNewDiagnosticsSortsReasons(t *testing.T) {
 	got := NewDiagnostics(candidates.GenerationDiagnostics{
-		Invalid:         1,
-		Banned:          2,
-		QualityRejected: 5,
-		Duplicates:      3,
+		Invalid:          1,
+		Banned:           5,
+		BannedSubstrings: 2,
+		BannedPrefixes:   1,
+		BannedSuffixes:   2,
+		QualityRejected:  5,
+		FamilyRejected:   2,
+		Duplicates:       3,
 		QualityReasons: map[string]int{
 			"soft_open_ending":   2,
 			"pharma_like_suffix": 4,
@@ -54,6 +58,8 @@ func TestWriteArtifactJSON(t *testing.T) {
 			MaxAttempts:       3,
 			RetryCount:        2,
 			QualityProfile:    "industrial",
+			AvoidPrefixes:     []string{"dev", "neo"},
+			AvoidSuffixes:     []string{"ia", "ora"},
 			AcceptedCount:     3,
 			InputTokens:       120,
 			OutputTokens:      18,
@@ -85,5 +91,11 @@ func TestWriteArtifactJSON(t *testing.T) {
 	}
 	if generation["pricing_available"] != true {
 		t.Fatalf("generation = %#v, want pricing_available true", generation)
+	}
+	if _, ok := generation["avoid_prefixes"]; !ok {
+		t.Fatalf("generation = %#v, want avoid_prefixes", generation)
+	}
+	if _, ok := generation["avoid_suffixes"]; !ok {
+		t.Fatalf("generation = %#v, want avoid_suffixes", generation)
 	}
 }

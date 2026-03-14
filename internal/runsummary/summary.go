@@ -32,6 +32,8 @@ type Generation struct {
 	RetryCount        int      `json:"retry_count"`
 	QualityProfile    string   `json:"quality_profile,omitempty"`
 	AvoidSubstrings   []string `json:"avoid_substrings,omitempty"`
+	AvoidPrefixes     []string `json:"avoid_prefixes,omitempty"`
+	AvoidSuffixes     []string `json:"avoid_suffixes,omitempty"`
 	AcceptedCount     int      `json:"accepted_count"`
 	InputTokens       int      `json:"input_tokens,omitempty"`
 	OutputTokens      int      `json:"output_tokens,omitempty"`
@@ -41,11 +43,15 @@ type Generation struct {
 }
 
 type Diagnostics struct {
-	Invalid         int           `json:"invalid"`
-	Banned          int           `json:"banned"`
-	QualityRejected int           `json:"quality_rejected"`
-	Duplicates      int           `json:"duplicates"`
-	QualityReasons  []ReasonCount `json:"quality_reasons,omitempty"`
+	Invalid          int           `json:"invalid"`
+	Banned           int           `json:"banned"`
+	BannedSubstrings int           `json:"banned_substrings,omitempty"`
+	BannedPrefixes   int           `json:"banned_prefixes,omitempty"`
+	BannedSuffixes   int           `json:"banned_suffixes,omitempty"`
+	QualityRejected  int           `json:"quality_rejected"`
+	FamilyRejected   int           `json:"family_rejected,omitempty"`
+	Duplicates       int           `json:"duplicates"`
+	QualityReasons   []ReasonCount `json:"quality_reasons,omitempty"`
 }
 
 type ReasonCount struct {
@@ -68,11 +74,15 @@ func NewDiagnostics(source candidates.GenerationDiagnostics) *Diagnostics {
 		return reasons[i].Reason < reasons[j].Reason
 	})
 	return &Diagnostics{
-		Invalid:         source.Invalid,
-		Banned:          source.Banned,
-		QualityRejected: source.QualityRejected,
-		Duplicates:      source.Duplicates,
-		QualityReasons:  reasons,
+		Invalid:          source.Invalid,
+		Banned:           source.Banned,
+		BannedSubstrings: source.BannedSubstrings,
+		BannedPrefixes:   source.BannedPrefixes,
+		BannedSuffixes:   source.BannedSuffixes,
+		QualityRejected:  source.QualityRejected,
+		FamilyRejected:   source.FamilyRejected,
+		Duplicates:       source.Duplicates,
+		QualityReasons:   reasons,
 	}
 }
 

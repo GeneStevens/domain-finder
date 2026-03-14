@@ -17,6 +17,7 @@ const (
 	ReasonSoftOpenEnding     Reason = "soft_open_ending"
 	ReasonVowelHeavy         Reason = "vowel_heavy"
 	ReasonMushyVowelFlow     Reason = "mushy_vowel_flow"
+	ReasonCVAlternationMush  Reason = "cv_alternation_mush"
 	ReasonWeakConsonantShape Reason = "weak_consonant_shape"
 )
 
@@ -69,25 +70,33 @@ func evaluateIndustrial(stem string) Evaluation {
 
 	length := len(stem)
 	switch {
-	case length >= 5 && length <= 8:
+	case length >= 5 && length <= 7:
+		score += 3
+	case length == 8:
 		score += 2
 	case length <= 10:
 		score++
 	}
 
 	if hasHardEnding(stem) {
-		score += 2
+		score += 3
 	} else if hasSoftOpenEnding(stem) {
 		addReason(ReasonSoftOpenEnding, -2)
 	}
 
 	if hasConsonantAnchor(stem) {
+		score += 2
+	}
+	if hasStrongConsonantDensity(stem) {
+		score += 2
+	}
+	if hasHardStarter(stem) {
 		score++
 	}
 
 	vowels, consonants := countLetters(stem)
 	if consonants >= vowels+1 {
-		score++
+		score += 2
 	}
 	if length >= 6 && vowels*2 > length+1 {
 		addReason(ReasonVowelHeavy, -2)
@@ -95,11 +104,14 @@ func evaluateIndustrial(stem string) Evaluation {
 	if hasMushyVowelFlow(stem) {
 		addReason(ReasonMushyVowelFlow, -2)
 	}
+	if hasCVAlternationMush(stem) {
+		addReason(ReasonCVAlternationMush, -2)
+	}
 	if hasPharmaLikeSuffix(stem) {
 		addReason(ReasonPharmaLikeSuffix, -4)
 	}
-	if !hasHardEnding(stem) && !hasConsonantAnchor(stem) && consonants <= vowels {
-		addReason(ReasonWeakConsonantShape, -2)
+	if !hasHardEnding(stem) && !hasConsonantAnchor(stem) && !hasStrongConsonantDensity(stem) && consonants <= vowels+1 {
+		addReason(ReasonWeakConsonantShape, -3)
 	}
 
 	return Evaluation{
@@ -136,7 +148,7 @@ func hasSoftOpenEnding(stem string) bool {
 
 func hasConsonantAnchor(stem string) bool {
 	anchors := []string{
-		"str", "ctr", "tr", "dr", "cr", "gr", "rd", "rk", "sk", "xt", "nd", "pt", "lk", "nx", "kt",
+		"str", "ctr", "tr", "dr", "cr", "gr", "rd", "rk", "sk", "xt", "nd", "pt", "lk", "nx", "kt", "st", "ft", "rk", "nt", "ld", "nz", "qx", "rx", "vr",
 	}
 	for _, anchor := range anchors {
 		if strings.Contains(stem, anchor) {
@@ -150,7 +162,7 @@ func hasMushyVowelFlow(stem string) bool {
 	if longestVowelRun(stem) >= 3 {
 		return true
 	}
-	patterns := []string{"ia", "eo", "ua", "oa", "ae"}
+	patterns := []string{"ia", "eo", "ua", "oa", "ae", "io", "ai", "ea", "oe"}
 	for _, pattern := range patterns {
 		if strings.Contains(stem, pattern) {
 			return true
@@ -161,7 +173,7 @@ func hasMushyVowelFlow(stem string) bool {
 
 func hasPharmaLikeSuffix(stem string) bool {
 	suffixes := []string{
-		"zyme", "pharm", "cure", "thera", "gen", "med", "bio", "via", "viva", "vera", "lia", "ria", "nia",
+		"zyme", "pharm", "cure", "thera", "gen", "med", "bio", "via", "viva", "vera", "lia", "ria", "nia", "ia", "ara", "ora", "iva", "eria", "oria",
 	}
 	for _, suffix := range suffixes {
 		if strings.HasSuffix(stem, suffix) {
@@ -169,6 +181,39 @@ func hasPharmaLikeSuffix(stem string) bool {
 		}
 	}
 	return false
+}
+
+func hasCVAlternationMush(stem string) bool {
+	if len(stem) < 6 {
+		return false
+	}
+	alternations := 0
+	prevVowel := isVowel(rune(stem[0]))
+	for _, r := range stem[1:] {
+		currentVowel := isVowel(r)
+		if currentVowel != prevVowel {
+			alternations++
+		}
+		prevVowel = currentVowel
+	}
+	return alternations >= len(stem)-2 && !hasConsonantAnchor(stem)
+}
+
+func hasStrongConsonantDensity(stem string) bool {
+	_, consonants := countLetters(stem)
+	return consonants >= 4 && consonantRun(stem) >= 2
+}
+
+func hasHardStarter(stem string) bool {
+	if stem == "" {
+		return false
+	}
+	switch stem[0] {
+	case 'k', 'q', 't', 'd', 'f', 'g', 'p', 'b', 'c', 'x':
+		return true
+	default:
+		return false
+	}
 }
 
 func countLetters(stem string) (vowels, consonants int) {
@@ -197,4 +242,31 @@ func longestVowelRun(stem string) int {
 		}
 	}
 	return longest
+}
+
+func consonantRun(stem string) int {
+	longest := 0
+	current := 0
+	for _, r := range stem {
+		if isVowel(r) {
+			current = 0
+			continue
+		}
+		if 'a' <= r && r <= 'z' {
+			current++
+			if current > longest {
+				longest = current
+			}
+		}
+	}
+	return longest
+}
+
+func isVowel(r rune) bool {
+	switch r {
+	case 'a', 'e', 'i', 'o', 'u':
+		return true
+	default:
+		return false
+	}
 }

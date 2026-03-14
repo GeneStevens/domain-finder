@@ -867,7 +867,9 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 		"  prefix: neo\n" +
 		"  suffix: ix\n" +
 		"  style: security product\n" +
-		"  avoid_substrings: dev,cloud\n"
+		"  avoid_substrings: dev,cloud\n" +
+		"  avoid_prefixes: dev,neo\n" +
+		"  avoid_suffixes: ia,ora\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -904,6 +906,7 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 		"-generate-max-length", "12",
 		"-generate-prefix", "sec",
 		"-generate-style", "invented SaaS",
+		"-generate-avoid-prefixes", "sys,neo",
 	}, strings.NewReader(""), &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -936,6 +939,12 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 	if got := strings.Join(captured.AvoidSubstrings, ","); got != "dev,cloud" {
 		t.Fatalf("captured.AvoidSubstrings = %q, want dev,cloud from config", got)
 	}
+	if got := strings.Join(captured.AvoidPrefixes, ","); got != "sys,neo" {
+		t.Fatalf("captured.AvoidPrefixes = %q, want sys,neo from CLI", got)
+	}
+	if got := strings.Join(captured.AvoidSuffixes, ","); got != "ia,ora" {
+		t.Fatalf("captured.AvoidSuffixes = %q, want ia,ora from config", got)
+	}
 	if len(generator.calls) != 3 || generator.calls[0] != 2 || generator.calls[1] != 2 || generator.calls[2] != 1 {
 		t.Fatalf("generator calls = %#v, want [2 2 1]", generator.calls)
 	}
@@ -960,7 +969,9 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"  prefix: neo\n" +
 		"  suffix: ix\n" +
 		"  style: security product\n" +
-		"  avoid_substrings: dev,cloud\n"
+		"  avoid_substrings: dev,cloud\n" +
+		"  avoid_prefixes: dev,neo\n" +
+		"  avoid_suffixes: ia,ora\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1006,6 +1017,8 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"prefix: neo",
 		"suffix: ix",
 		"avoid_substrings: dev, cloud",
+		"avoid_prefixes: dev, neo",
+		"avoid_suffixes: ia, ora",
 		"system prompt",
 		"user prompt",
 	}
@@ -1030,7 +1043,9 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"  prefix: neo\n" +
 		"  suffix: ix\n" +
 		"  style: security product\n" +
-		"  avoid_substrings: dev,cloud\n"
+		"  avoid_substrings: dev,cloud\n" +
+		"  avoid_prefixes: dev,neo\n" +
+		"  avoid_suffixes: ia,ora\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1062,6 +1077,8 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"-generate-suffix", "io",
 		"-generate-style", "developer tool",
 		"-generate-avoid-substrings", "stack,forge,cloud",
+		"-generate-avoid-prefixes", "dev,neo",
+		"-generate-avoid-suffixes", "ia,ora",
 	}, strings.NewReader(""), &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -1079,6 +1096,8 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"suffix: io",
 		"style: developer tool",
 		"avoid_substrings: stack, forge, cloud",
+		"avoid_prefixes: dev, neo",
+		"avoid_suffixes: ia, ora",
 		"start with `dev`",
 		"end with `io`",
 	}
@@ -1104,7 +1123,9 @@ func TestRunGenerateDryRunJSONOutput(t *testing.T) {
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
 		"  suffix: ix\n" +
-		"  style: security product\n"
+		"  style: security product\n" +
+		"  avoid_prefixes: dev,neo\n" +
+		"  avoid_suffixes: ia,ora\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1155,6 +1176,14 @@ func TestRunGenerateDryRunJSONOutput(t *testing.T) {
 	if constraints["max_length"] != float64(10) || constraints["max_syllables"] != float64(2) || constraints["prefix"] != "neo" || constraints["suffix"] != "ix" {
 		t.Fatalf("constraints = %#v, want stable constraint shape", constraints)
 	}
+	avoidPrefixes := constraints["avoid_prefixes"].([]any)
+	if len(avoidPrefixes) != 2 || avoidPrefixes[0] != "dev" || avoidPrefixes[1] != "neo" {
+		t.Fatalf("avoid_prefixes = %#v, want [dev neo]", avoidPrefixes)
+	}
+	avoidSuffixes := constraints["avoid_suffixes"].([]any)
+	if len(avoidSuffixes) != 2 || avoidSuffixes[0] != "ia" || avoidSuffixes[1] != "ora" {
+		t.Fatalf("avoid_suffixes = %#v, want [ia ora]", avoidSuffixes)
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty dry-run stderr", stderr.String())
 	}
@@ -1173,7 +1202,9 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
 		"  suffix: ix\n" +
-		"  style: security product\n"
+		"  style: security product\n" +
+		"  avoid_prefixes: dev,neo\n" +
+		"  avoid_suffixes: ia,ora\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1197,6 +1228,8 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		"-generate-prefix", "dev",
 		"-generate-suffix", "io",
 		"-generate-style", "developer tool",
+		"-generate-avoid-prefixes", "sys,neo",
+		"-generate-avoid-suffixes", "io,iva",
 	}, strings.NewReader(""), &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -1215,6 +1248,14 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 	constraints := got["constraints"].(map[string]any)
 	if constraints["max_length"] != float64(12) || constraints["max_syllables"] != float64(3) || constraints["prefix"] != "dev" || constraints["suffix"] != "io" {
 		t.Fatalf("constraints = %#v, want CLI override values", constraints)
+	}
+	avoidPrefixes := constraints["avoid_prefixes"].([]any)
+	if len(avoidPrefixes) != 2 || avoidPrefixes[0] != "sys" || avoidPrefixes[1] != "neo" {
+		t.Fatalf("avoid_prefixes = %#v, want [sys neo]", avoidPrefixes)
+	}
+	avoidSuffixes := constraints["avoid_suffixes"].([]any)
+	if len(avoidSuffixes) != 2 || avoidSuffixes[0] != "io" || avoidSuffixes[1] != "iva" {
+		t.Fatalf("avoid_suffixes = %#v, want [io iva]", avoidSuffixes)
 	}
 	if got["style"] != "developer tool" {
 		t.Fatalf("style = %#v, want developer tool", got["style"])
@@ -1334,7 +1375,8 @@ func TestRunTextWorkflowRejectsWeakGeneratedStems(t *testing.T) {
 		"quality.pharma_like_suffix: 2",
 		"quality.soft_open_ending: 2",
 		"quality.mushy_vowel_flow: 2",
-		"quality.weak_consonant_shape: 2",
+		"quality.cv_alternation_mush: 1",
+		"quality.weak_consonant_shape: 1",
 	} {
 		if !strings.Contains(stderr.String(), fragment) {
 			t.Fatalf("stderr missing %q:\n%s", fragment, stderr.String())
@@ -1345,7 +1387,7 @@ func TestRunTextWorkflowRejectsWeakGeneratedStems(t *testing.T) {
 func TestRunGenerationRunSummaryIncludesDiagnostics(t *testing.T) {
 	dir := t.TempDir()
 	summaryPath := filepath.Join(dir, "run-summary.json")
-	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("openai:\n  model: yaml-model\ngenerate:\n  count: 2\n  batch_size: 2\n  quality_profile: industrial\n  avoid_substrings: dev,cloud\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("openai:\n  model: yaml-model\ngenerate:\n  count: 2\n  batch_size: 2\n  quality_profile: industrial\n  avoid_substrings: dev,cloud\n  avoid_prefixes: dev,neo\n  avoid_suffixes: ia,ora\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1400,6 +1442,12 @@ func TestRunGenerationRunSummaryIncludesDiagnostics(t *testing.T) {
 	if generation["model"] != "yaml-model" || generation["generate_count"] != float64(2) || generation["quality_profile"] != "industrial" {
 		t.Fatalf("generation = %#v, want resolved generation settings", generation)
 	}
+	if got := generation["avoid_prefixes"].([]any); len(got) != 2 || got[0] != "dev" || got[1] != "neo" {
+		t.Fatalf("avoid_prefixes = %#v, want [dev neo]", generation["avoid_prefixes"])
+	}
+	if got := generation["avoid_suffixes"].([]any); len(got) != 2 || got[0] != "ia" || got[1] != "ora" {
+		t.Fatalf("avoid_suffixes = %#v, want [ia ora]", generation["avoid_suffixes"])
+	}
 	if generation["accepted_count"] != float64(2) {
 		t.Fatalf("accepted_count = %#v, want 2", generation["accepted_count"])
 	}
@@ -1417,12 +1465,11 @@ func TestRunGenerationRunSummaryIncludesDiagnostics(t *testing.T) {
 	if !ok {
 		t.Fatalf("diagnostics = %#v, want diagnostics object", got["diagnostics"])
 	}
-	if diagnostics["banned"] != float64(1) || diagnostics["quality_rejected"] != float64(1) {
-		t.Fatalf("diagnostics = %#v, want banned 1 quality_rejected 1", diagnostics)
+	if diagnostics["banned"] != float64(2) || diagnostics["banned_substrings"] != float64(1) || diagnostics["banned_suffixes"] != float64(1) {
+		t.Fatalf("diagnostics = %#v, want banned substring/suffix accounting", diagnostics)
 	}
-	reasons, ok := diagnostics["quality_reasons"].([]any)
-	if !ok || len(reasons) == 0 {
-		t.Fatalf("quality_reasons = %#v, want populated reason list", diagnostics["quality_reasons"])
+	if diagnostics["quality_rejected"] != float64(0) {
+		t.Fatalf("diagnostics = %#v, want quality_rejected 0 after lexical filtering", diagnostics)
 	}
 	if stderr.Len() == 0 {
 		t.Fatalf("stderr = %q, want normal generation status output", stderr.String())

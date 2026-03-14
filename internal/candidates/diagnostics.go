@@ -8,11 +8,15 @@ import (
 
 // GenerationDiagnostics aggregates generated-stem rejection signals across a run.
 type GenerationDiagnostics struct {
-	Invalid         int
-	Banned          int
-	QualityRejected int
-	Duplicates      int
-	QualityReasons  map[string]int
+	Invalid          int
+	Banned           int
+	BannedSubstrings int
+	BannedPrefixes   int
+	BannedSuffixes   int
+	QualityRejected  int
+	FamilyRejected   int
+	Duplicates       int
+	QualityReasons   map[string]int
 }
 
 // MergeBatch folds one generated-ingest batch report into the run-level diagnostics.
@@ -22,7 +26,11 @@ func (d *GenerationDiagnostics) MergeBatch(report BatchReport) {
 	}
 	d.Invalid += report.Invalid
 	d.Banned += report.LexicalRejected
+	d.BannedSubstrings += report.BannedSubstrings
+	d.BannedPrefixes += report.BannedPrefixes
+	d.BannedSuffixes += report.BannedSuffixes
 	d.QualityRejected += report.QualityRejected
+	d.FamilyRejected += report.FamilyRejected
 	d.Duplicates += report.Duplicates
 	if len(report.QualityReasons) == 0 {
 		return
@@ -37,7 +45,7 @@ func (d *GenerationDiagnostics) MergeBatch(report BatchReport) {
 
 // HasData reports whether any generated rejection diagnostics were recorded.
 func (d GenerationDiagnostics) HasData() bool {
-	return d.Invalid > 0 || d.Banned > 0 || d.QualityRejected > 0 || d.Duplicates > 0 || len(d.QualityReasons) > 0
+	return d.Invalid > 0 || d.Banned > 0 || d.BannedSubstrings > 0 || d.BannedPrefixes > 0 || d.BannedSuffixes > 0 || d.QualityRejected > 0 || d.FamilyRejected > 0 || d.Duplicates > 0 || len(d.QualityReasons) > 0
 }
 
 // Lines renders a stable compact diagnostics block.
@@ -46,8 +54,14 @@ func (d GenerationDiagnostics) Lines() []string {
 		return nil
 	}
 	lines := []string{"generation diagnostics"}
-	if d.Banned > 0 {
-		lines = append(lines, fmt.Sprintf("  banned_substring: %d", d.Banned))
+	if d.BannedSubstrings > 0 {
+		lines = append(lines, fmt.Sprintf("  banned_substring: %d", d.BannedSubstrings))
+	}
+	if d.BannedPrefixes > 0 {
+		lines = append(lines, fmt.Sprintf("  banned_prefix: %d", d.BannedPrefixes))
+	}
+	if d.BannedSuffixes > 0 {
+		lines = append(lines, fmt.Sprintf("  banned_suffix: %d", d.BannedSuffixes))
 	}
 	reasons := make([]reasonCount, 0, len(d.QualityReasons))
 	for reason, count := range d.QualityReasons {
@@ -61,6 +75,9 @@ func (d GenerationDiagnostics) Lines() []string {
 	})
 	for _, entry := range reasons {
 		lines = append(lines, fmt.Sprintf("  quality.%s: %d", entry.reason, entry.count))
+	}
+	if d.FamilyRejected > 0 {
+		lines = append(lines, fmt.Sprintf("  family_rejected: %d", d.FamilyRejected))
 	}
 	if d.Invalid > 0 {
 		lines = append(lines, fmt.Sprintf("  invalid: %d", d.Invalid))

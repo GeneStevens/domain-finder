@@ -38,6 +38,8 @@ type GenerateConfig struct {
 	Prefix              string
 	Style               string
 	AvoidSubstrings     []string
+	AvoidPrefixes       []string
+	AvoidSuffixes       []string
 }
 
 type PostgresConfig struct {
@@ -56,6 +58,8 @@ type CLIOverrides struct {
 	GeneratePrefix          string
 	GenerateStyle           string
 	GenerateAvoidSubstrings string
+	GenerateAvoidPrefixes   string
+	GenerateAvoidSuffixes   string
 	PostgresDSN             string
 }
 
@@ -73,6 +77,8 @@ type fileConfig struct {
 	GeneratePrefix          string
 	GenerateStyle           string
 	GenerateAvoidSubstrings string
+	GenerateAvoidPrefixes   string
+	GenerateAvoidSuffixes   string
 	PostgresDSN             string
 }
 
@@ -173,6 +179,12 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_AVOID_SUBSTRINGS"); ok && value != "" {
 		cfg.Generate.AvoidSubstrings = parseCSVList(value)
 	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_AVOID_PREFIXES"); ok && value != "" {
+		cfg.Generate.AvoidPrefixes = parseCSVList(value)
+	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_AVOID_SUFFIXES"); ok && value != "" {
+		cfg.Generate.AvoidSuffixes = parseCSVList(value)
+	}
 
 	if cli.OpenAIModel != "" {
 		cfg.OpenAI.Model = cli.OpenAIModel
@@ -203,6 +215,12 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	}
 	if cli.GenerateAvoidSubstrings != "" {
 		cfg.Generate.AvoidSubstrings = parseCSVList(cli.GenerateAvoidSubstrings)
+	}
+	if cli.GenerateAvoidPrefixes != "" {
+		cfg.Generate.AvoidPrefixes = parseCSVList(cli.GenerateAvoidPrefixes)
+	}
+	if cli.GenerateAvoidSuffixes != "" {
+		cfg.Generate.AvoidSuffixes = parseCSVList(cli.GenerateAvoidSuffixes)
 	}
 	if cli.PostgresDSN != "" {
 		cfg.Postgres.DSN = cli.PostgresDSN
@@ -250,6 +268,12 @@ func applyFileConfig(cfg *Config, fc fileConfig) {
 	}
 	if fc.GenerateAvoidSubstrings != "" {
 		cfg.Generate.AvoidSubstrings = parseCSVList(fc.GenerateAvoidSubstrings)
+	}
+	if fc.GenerateAvoidPrefixes != "" {
+		cfg.Generate.AvoidPrefixes = parseCSVList(fc.GenerateAvoidPrefixes)
+	}
+	if fc.GenerateAvoidSuffixes != "" {
+		cfg.Generate.AvoidSuffixes = parseCSVList(fc.GenerateAvoidSuffixes)
 	}
 	if fc.PostgresDSN != "" {
 		cfg.Postgres.DSN = fc.PostgresDSN
@@ -340,6 +364,10 @@ func loadFile(path string) (fileConfig, error) {
 			cfg.GenerateStyle = value
 		case "generate.avoid_substrings":
 			cfg.GenerateAvoidSubstrings = value
+		case "generate.avoid_prefixes":
+			cfg.GenerateAvoidPrefixes = value
+		case "generate.avoid_suffixes":
+			cfg.GenerateAvoidSuffixes = value
 		case "postgres.dsn":
 			cfg.PostgresDSN = value
 		default:

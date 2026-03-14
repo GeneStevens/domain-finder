@@ -22,6 +22,8 @@ type PromptInput struct {
 	Prefix          string
 	Suffix          string
 	AvoidSubstrings []string
+	AvoidPrefixes   []string
+	AvoidSuffixes   []string
 }
 
 // PromptBuilder constructs disciplined generation instructions.
@@ -43,6 +45,8 @@ type Contract struct {
 	Prefix              string
 	Suffix              string
 	AvoidSubstrings     []string
+	AvoidPrefixes       []string
+	AvoidSuffixes       []string
 	SystemPrompt        string
 	UserPrompt          string
 }
@@ -58,6 +62,8 @@ func NewPromptInput(theme string, generate config.GenerateConfig) PromptInput {
 		Prefix:          strings.TrimSpace(generate.Prefix),
 		Suffix:          strings.TrimSpace(generate.Suffix),
 		AvoidSubstrings: append([]string(nil), generate.AvoidSubstrings...),
+		AvoidPrefixes:   append([]string(nil), generate.AvoidPrefixes...),
+		AvoidSuffixes:   append([]string(nil), generate.AvoidSuffixes...),
 	}
 }
 
@@ -79,6 +85,8 @@ func (b PromptBuilder) BuildContract(cfg config.Config, theme string) Contract {
 		Prefix:              input.Prefix,
 		Suffix:              input.Suffix,
 		AvoidSubstrings:     append([]string(nil), input.AvoidSubstrings...),
+		AvoidPrefixes:       append([]string(nil), input.AvoidPrefixes...),
+		AvoidSuffixes:       append([]string(nil), input.AvoidSuffixes...),
 		SystemPrompt:        systemPrompt,
 		UserPrompt:          b.BuildUserPrompt(input, cfg.Generate.Count),
 	}
@@ -99,8 +107,8 @@ func (PromptBuilder) BuildUserPrompt(input PromptInput, count int) string {
 		lines = append(lines, "Style: "+input.Style)
 	}
 	if input.QualityProfile == genquality.ProfileIndustrial {
-		lines = append(lines, "Quality profile: industrial. Prefer compact, harder-edged, infrastructure-like stems with stronger consonant structure.")
-		lines = append(lines, "Avoid soft startup-mush, pharma/biotech-like endings, and weak generic enterprise-tech shapes.")
+		lines = append(lines, "Quality profile: industrial. Prefer compact, harder-edged, infrastructure-like stems with stronger consonant anchors, denser consonant structure, and harder final consonants.")
+		lines = append(lines, "Favor compact 5-7 letter company-name shapes and avoid soft startup-mush, pharma/biotech-like endings, weak generic enterprise-tech shapes, and repetitive same-family near variants.")
 	}
 	if input.MaxLength > 0 {
 		lines = append(lines, fmt.Sprintf("Constraint: each stem must be no more than %d letters.", input.MaxLength))
@@ -116,6 +124,12 @@ func (PromptBuilder) BuildUserPrompt(input PromptInput, count int) string {
 	}
 	if len(input.AvoidSubstrings) > 0 {
 		lines = append(lines, fmt.Sprintf("Hard constraint: do not return stems containing any of these substrings: %s.", formatQuotedList(input.AvoidSubstrings)))
+	}
+	if len(input.AvoidPrefixes) > 0 {
+		lines = append(lines, fmt.Sprintf("Hard constraint: do not return stems starting with any of these prefixes: %s.", formatQuotedList(input.AvoidPrefixes)))
+	}
+	if len(input.AvoidSuffixes) > 0 {
+		lines = append(lines, fmt.Sprintf("Hard constraint: do not return stems ending with any of these suffixes: %s.", formatQuotedList(input.AvoidSuffixes)))
 	}
 	lines = append(lines, "Do not include bullets, numbering, commentary, or duplicate stems.")
 	return strings.Join(lines, "\n")
@@ -138,6 +152,8 @@ func RenderContract(contract Contract) string {
 	fmt.Fprintf(&out, "  prefix: %s\n", renderOptional(contract.Prefix))
 	fmt.Fprintf(&out, "  suffix: %s\n", renderOptional(contract.Suffix))
 	fmt.Fprintf(&out, "  avoid_substrings: %s\n", renderOptionalList(contract.AvoidSubstrings))
+	fmt.Fprintf(&out, "  avoid_prefixes: %s\n", renderOptionalList(contract.AvoidPrefixes))
+	fmt.Fprintf(&out, "  avoid_suffixes: %s\n", renderOptionalList(contract.AvoidSuffixes))
 	fmt.Fprintf(&out, "\n")
 	fmt.Fprintf(&out, "system prompt\n")
 	fmt.Fprintf(&out, "%s\n", contract.SystemPrompt)
@@ -156,6 +172,8 @@ func RenderContractJSON(contract Contract) ([]byte, error) {
 		Prefix          string   `json:"prefix,omitempty"`
 		Suffix          string   `json:"suffix,omitempty"`
 		AvoidSubstrings []string `json:"avoid_substrings,omitempty"`
+		AvoidPrefixes   []string `json:"avoid_prefixes,omitempty"`
+		AvoidSuffixes   []string `json:"avoid_suffixes,omitempty"`
 	}
 	type view struct {
 		Model          string      `json:"model"`
@@ -186,6 +204,8 @@ func RenderContractJSON(contract Contract) ([]byte, error) {
 			Prefix:          contract.Prefix,
 			Suffix:          contract.Suffix,
 			AvoidSubstrings: append([]string(nil), contract.AvoidSubstrings...),
+			AvoidPrefixes:   append([]string(nil), contract.AvoidPrefixes...),
+			AvoidSuffixes:   append([]string(nil), contract.AvoidSuffixes...),
 		},
 		SystemPrompt: contract.SystemPrompt,
 		UserPrompt:   contract.UserPrompt,

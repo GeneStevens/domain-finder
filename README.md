@@ -107,6 +107,8 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-prefix` prefers stems that start with specific text
 - `-generate-suffix` prefers stems that end with specific text
 - `-generate-avoid-substrings` hard-bans low-value lexical families from generated stems
+- `-generate-avoid-prefixes` hard-bans generated stems that start with certain prefixes
+- `-generate-avoid-suffixes` hard-bans generated stems that end with certain suffixes
 - `-generate-dry-run` prints the fully resolved generation contract and exits before any OpenAI call
 - `-generate-dry-run-format text|json` chooses human-readable or machine-readable inspection output
 - `-audit-log <path>` writes one audit JSONL record per checked stem
@@ -128,10 +130,18 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `avoid_substrings` is stronger than prompt guidance alone:
   - it is rendered into the prompt contract as an explicit negative rule
   - generated stems containing banned substrings are also hard-rejected after generation
+- `avoid_prefixes` and `avoid_suffixes` extend that same generated-only hard-rejection policy:
+  - both are rendered into the prompt contract as explicit negative rules
+  - generated stems starting with banned prefixes or ending with banned suffixes are rejected before lookup
 - `generate.quality_profile` is a generated-only taste filter:
-  - `industrial` favors stronger, harder-edged infrastructure-like name shapes
-  - weak soft/pharma-like generated stems can still be rejected even if they pass normal validation
+  - `industrial` now more aggressively favors stronger, harder-edged infrastructure-like name shapes
+  - compact 5-7 letter forms, denser consonant structure, stronger consonant anchors, and harder endings score positively
+  - soft pharma/startup-mush patterns such as soft open endings, mushy CV alternation, and weak consonant weight are rejected more aggressively
   - manual CLI, file, and stdin stems are not filtered by this profile
+- generated runs also use a lightweight family-diversity guard:
+  - accepted stems are limited per crude family signature so one naming basin does not dominate the run
+  - this is deterministic, explainable, and generated-only
+  - family rejections appear in diagnostics as `family_rejected`
 - `-generate-dry-run` uses the same resolved config and prompt builder, but does not require an API key and does not touch the network
 
 ## Generation dry run
@@ -153,6 +163,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - Transient OpenAI failures such as rate limits or server errors are retried a bounded number of times
 - Poor model output such as duplicates, FQDNs, punctuation, empty values, or noisy text is treated as degraded batch quality rather than silently corrupting the candidate pipeline
 - Generated stems containing banned substrings are rejected before lookup and counted as unusable batch output
+- Generated stems hitting banned prefixes or banned suffixes are also rejected before lookup
 - Generated stems can also be rejected by the configured quality profile before lookup, and those rejections are counted separately in generation progress
 - Interactive and text-mode generation runs emit concise stderr status lines showing batch requests, accepted/rejected counts, retries, and completion/failure
 - At the end of a generation run, text-mode runs also print a compact `generation diagnostics` block summarizing dominant rejection categories across the whole run
@@ -171,7 +182,10 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - After a real generation run in text mode, `domain-finder` prints a compact run-level diagnostics block on `stderr`
 - This summary aggregates generated-stem rejection signals across the run, including:
   - `banned_substring`
+  - `banned_prefix`
+  - `banned_suffix`
   - `quality.<reason>`
+  - `family_rejected`
   - `invalid`
   - `duplicates`
 - Quality reasons reuse the same explainable categories used by the generated quality filter, such as `quality.pharma_like_suffix` or `quality.soft_open_ending`
@@ -461,7 +475,9 @@ go run ./cmd/domain-finder \
   -generate-max-length 12 \
   -generate-max-syllables 3 \
   -generate-suffix io \
-  -generate-avoid-substrings "dev,code,stack,cloud,sync,ops,grid,craft,build,tool,lab,forge,flow"
+  -generate-avoid-substrings "dev,code,stack,cloud,sync,ops,grid,craft,build,tool,lab,forge,flow" \
+  -generate-avoid-prefixes "dev,neo" \
+  -generate-avoid-suffixes "io,ia,ora,iva,ara"
 ```
 
 Dry-run prompt inspection without spending API calls:
@@ -500,7 +516,10 @@ Typical operator feedback during generation:
 - `generation: batch 1 attempt 1 requesting 3 stems`
 - `generation: batch 1 attempt 1 accepted 2, invalid 1, banned 0, quality_rejected 1, duplicates 0, need 1 more`
 - `generation diagnostics`
+- `  banned_prefix: 3`
+- `  banned_suffix: 4`
 - `  quality.pharma_like_suffix: 4`
+- `  family_rejected: 2`
 - `  duplicates: 2`
 - `generation: retrying batch 1 attempt 2 (1/2) after transient error`
 - `generation: complete, accepted 6 stems`
@@ -520,6 +539,8 @@ generate:
   suffix: ""
   style: industrial infrastructure naming
   avoid_substrings: dev,code,stack,cloud,sync,ops,grid,craft,build,tool,lab,forge,flow
+  avoid_prefixes: dev,neo
+  avoid_suffixes: io,ia,ora,iva,ara
 ```
 
 The run summary JSON complements the audit log:

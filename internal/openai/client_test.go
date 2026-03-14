@@ -20,11 +20,21 @@ func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func TestGenerateBatch(t *testing.T) {
 	client := &Client{
-		APIKey:   "test-key",
-		Model:    "gpt-4o-mini",
-		BaseURL:  "https://example.invalid/v1/chat/completions",
-		Builder:  PromptBuilder{},
-		Generate: config.GenerateConfig{QualityProfile: "industrial", Style: "developer tool", MaxLength: 12, MaxSyllables: 3, Prefix: "dev", Suffix: "io", AvoidSubstrings: []string{"stack", "cloud"}},
+		APIKey:  "test-key",
+		Model:   "gpt-4o-mini",
+		BaseURL: "https://example.invalid/v1/chat/completions",
+		Builder: PromptBuilder{},
+		Generate: config.GenerateConfig{
+			QualityProfile:  "industrial",
+			Style:           "developer tool",
+			MaxLength:       12,
+			MaxSyllables:    3,
+			Prefix:          "dev",
+			Suffix:          "io",
+			AvoidSubstrings: []string{"stack", "cloud"},
+			AvoidPrefixes:   []string{"neo"},
+			AvoidSuffixes:   []string{"ia", "ora"},
+		},
 		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
 				t.Fatalf("Authorization = %q, want %q", got, "Bearer test-key")
@@ -36,7 +46,7 @@ func TestGenerateBatch(t *testing.T) {
 			if !strings.Contains(string(body), `"json_schema"`) {
 				t.Fatalf("request body = %s, want structured output request", string(body))
 			}
-			for _, fragment := range []string{"developer tool", "Quality profile: industrial", "infrastructure-like stems", "no more than 12 letters", "no more than 3 syllables", "start with `dev`", "end with `io`", "`stack`", "`cloud`"} {
+			for _, fragment := range []string{"developer tool", "Quality profile: industrial", "infrastructure-like stems", "no more than 12 letters", "no more than 3 syllables", "start with `dev`", "end with `io`", "`stack`", "`cloud`", "`neo`", "`ia`"} {
 				if !strings.Contains(string(body), fragment) {
 					t.Fatalf("request body missing %q:\n%s", fragment, string(body))
 				}

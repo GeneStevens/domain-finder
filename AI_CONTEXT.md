@@ -106,7 +106,10 @@ available domains.
   - degraded model output is rejected without contaminating the candidate set
   - prompt guidance is not validation; generated stems still pass through the normal candidate validation gate
   - `avoid_substrings` is also hard-enforced after generation, before lookup
+  - `avoid_prefixes` and `avoid_suffixes` are also hard-enforced after generation, before lookup
   - generated stems can also be rejected by a generated-only quality profile, currently `industrial`
+  - the `industrial` profile now explicitly favors compact 5-7 character names, stronger consonant anchors, denser consonant structure, and harder endings
+  - generated acceptance also applies a deterministic family-diversity guard so one near-identical name family does not dominate the accepted pool
   - text-mode generation runs now print a compact end-of-run diagnostics block summarizing dominant rejection categories
   - dry-run uses the same config-resolution and prompt-builder path as a real run
 
@@ -157,7 +160,7 @@ available domains.
 - `-generate-dry-run` prints the resolved prompt contract and exits without an API call.
 - `-generate-dry-run-format text|json` selects human-readable or machine-readable contract inspection.
 - `-generate-count`, `-generate-batch-size`, and `-generate-model` override generation config.
-- `-generate-style`, `-generate-quality-profile`, `-generate-max-length`, `-generate-max-syllables`, `-generate-prefix`, `-generate-suffix`, and `-generate-avoid-substrings` steer prompt construction.
+- `-generate-style`, `-generate-quality-profile`, `-generate-max-length`, `-generate-max-syllables`, `-generate-prefix`, `-generate-suffix`, `-generate-avoid-substrings`, `-generate-avoid-prefixes`, and `-generate-avoid-suffixes` steer prompt construction.
 - `generate.max_attempts` and `generate.retry_count` harden generation behavior from YAML/env config.
 - `-format text|jsonl` selects a human-readable or machine-readable output mode.
 - `-filter all|absent-in-all` controls which results are emitted.

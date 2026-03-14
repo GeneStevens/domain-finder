@@ -19,6 +19,8 @@ func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 		Prefix:          "dev",
 		Suffix:          "io",
 		AvoidSubstrings: []string{"stack", "cloud"},
+		AvoidPrefixes:   []string{"dev", "neo"},
+		AvoidSuffixes:   []string{"ia", "ora"},
 	}, 25)
 
 	wantFragments := []string{
@@ -32,8 +34,12 @@ func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 		"start with `dev`",
 		"end with `io`",
 		"do not return stems containing any of these substrings",
+		"do not return stems starting with any of these prefixes",
+		"do not return stems ending with any of these suffixes",
 		"`stack`",
 		"`cloud`",
+		"`neo`",
+		"`ora`",
 		"Do not include bullets, numbering, commentary, or duplicate stems.",
 	}
 	for _, fragment := range wantFragments {
@@ -52,9 +58,11 @@ func TestNewPromptInputFromConfig(t *testing.T) {
 		Prefix:          "sec",
 		Suffix:          "ix",
 		AvoidSubstrings: []string{"dev", "cloud"},
+		AvoidPrefixes:   []string{"dev"},
+		AvoidSuffixes:   []string{"ia", "ora"},
 	})
 
-	if got.QualityProfile != "industrial" || got.Theme != "security names" || got.Style != "security product" || got.MaxLength != 10 || got.MaxSyllables != 2 || got.Prefix != "sec" || got.Suffix != "ix" || len(got.AvoidSubstrings) != 2 {
+	if got.QualityProfile != "industrial" || got.Theme != "security names" || got.Style != "security product" || got.MaxLength != 10 || got.MaxSyllables != 2 || got.Prefix != "sec" || got.Suffix != "ix" || len(got.AvoidSubstrings) != 2 || len(got.AvoidPrefixes) != 1 || len(got.AvoidSuffixes) != 2 {
 		t.Fatalf("NewPromptInput() = %#v, want populated constraint input", got)
 	}
 }
@@ -77,6 +85,8 @@ func TestBuildContractAndRender(t *testing.T) {
 			Suffix:              "io",
 			Style:               "developer tool",
 			AvoidSubstrings:     []string{"stack", "cloud"},
+			AvoidPrefixes:       []string{"dev", "neo"},
+			AvoidSuffixes:       []string{"ia", "ora"},
 		},
 	}, "short product name stems")
 
@@ -100,11 +110,15 @@ func TestBuildContractAndRender(t *testing.T) {
 		"prefix: dev",
 		"suffix: io",
 		"avoid_substrings: stack, cloud",
+		"avoid_prefixes: dev, neo",
+		"avoid_suffixes: ia, ora",
 		"system prompt",
 		"user prompt",
 		"start with `dev`",
 		"end with `io`",
 		"`stack`",
+		"`neo`",
+		"`ora`",
 	}
 	for _, fragment := range wantFragments {
 		if !strings.Contains(rendered, fragment) {
@@ -131,6 +145,8 @@ func TestRenderContractJSON(t *testing.T) {
 			Suffix:              "io",
 			Style:               "developer tool",
 			AvoidSubstrings:     []string{"stack", "cloud"},
+			AvoidPrefixes:       []string{"dev", "neo"},
+			AvoidSuffixes:       []string{"ia", "ora"},
 		},
 	}, "short product name stems")
 
@@ -169,6 +185,14 @@ func TestRenderContractJSON(t *testing.T) {
 	avoid := constraints["avoid_substrings"].([]any)
 	if len(avoid) != 2 || avoid[0] != "stack" || avoid[1] != "cloud" {
 		t.Fatalf("avoid_substrings = %#v, want [stack cloud]", avoid)
+	}
+	avoidPrefixes := constraints["avoid_prefixes"].([]any)
+	if len(avoidPrefixes) != 2 || avoidPrefixes[0] != "dev" || avoidPrefixes[1] != "neo" {
+		t.Fatalf("avoid_prefixes = %#v, want [dev neo]", avoidPrefixes)
+	}
+	avoidSuffixes := constraints["avoid_suffixes"].([]any)
+	if len(avoidSuffixes) != 2 || avoidSuffixes[0] != "ia" || avoidSuffixes[1] != "ora" {
+		t.Fatalf("avoid_suffixes = %#v, want [ia ora]", avoidSuffixes)
 	}
 	if got["system_prompt"] == "" || got["user_prompt"] == "" {
 		t.Fatalf("prompts missing in %#v", got)
