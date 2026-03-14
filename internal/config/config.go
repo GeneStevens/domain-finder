@@ -40,6 +40,9 @@ type GenerateConfig struct {
 	AvoidSubstrings     []string
 	AvoidPrefixes       []string
 	AvoidSuffixes       []string
+	MaxCostUSD          float64
+	TargetStrongHits    int
+	MaxStallBatches     int
 }
 
 type PostgresConfig struct {
@@ -48,38 +51,44 @@ type PostgresConfig struct {
 
 // CLIOverrides are the CLI-provided config overrides.
 type CLIOverrides struct {
-	OpenAIModel             string
-	GenerateCount           int
-	GenerateBatchSize       int
-	GenerateQualityProfile  string
-	GenerateMaxLength       int
-	GenerateMaxSyllables    int
-	GenerateSuffix          string
-	GeneratePrefix          string
-	GenerateStyle           string
-	GenerateAvoidSubstrings string
-	GenerateAvoidPrefixes   string
-	GenerateAvoidSuffixes   string
-	PostgresDSN             string
+	OpenAIModel              string
+	GenerateCount            int
+	GenerateBatchSize        int
+	GenerateQualityProfile   string
+	GenerateMaxLength        int
+	GenerateMaxSyllables     int
+	GenerateSuffix           string
+	GeneratePrefix           string
+	GenerateStyle            string
+	GenerateAvoidSubstrings  string
+	GenerateAvoidPrefixes    string
+	GenerateAvoidSuffixes    string
+	GenerateMaxCostUSD       float64
+	GenerateTargetStrongHits int
+	GenerateMaxStallBatches  int
+	PostgresDSN              string
 }
 
 type fileConfig struct {
-	OpenAIAPIKey            string
-	OpenAIModel             string
-	GenerateCount           int
-	GenerateBatchSize       int
-	GenerateMaxAttempts     int
-	GenerateRetryCount      int
-	GenerateQualityProfile  string
-	GenerateMaxLength       int
-	GenerateMaxSyllables    int
-	GenerateSuffix          string
-	GeneratePrefix          string
-	GenerateStyle           string
-	GenerateAvoidSubstrings string
-	GenerateAvoidPrefixes   string
-	GenerateAvoidSuffixes   string
-	PostgresDSN             string
+	OpenAIAPIKey             string
+	OpenAIModel              string
+	GenerateCount            int
+	GenerateBatchSize        int
+	GenerateMaxAttempts      int
+	GenerateRetryCount       int
+	GenerateQualityProfile   string
+	GenerateMaxLength        int
+	GenerateMaxSyllables     int
+	GenerateSuffix           string
+	GeneratePrefix           string
+	GenerateStyle            string
+	GenerateAvoidSubstrings  string
+	GenerateAvoidPrefixes    string
+	GenerateAvoidSuffixes    string
+	GenerateMaxCostUSD       float64
+	GenerateTargetStrongHits int
+	GenerateMaxStallBatches  int
+	PostgresDSN              string
 }
 
 // Load resolves configuration using precedence:
@@ -185,6 +194,27 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_AVOID_SUFFIXES"); ok && value != "" {
 		cfg.Generate.AvoidSuffixes = parseCSVList(value)
 	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_MAX_COST_USD"); ok && value != "" {
+		parsed, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_MAX_COST_USD: %w", err)
+		}
+		cfg.Generate.MaxCostUSD = parsed
+	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_TARGET_STRONG_HITS"); ok && value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_TARGET_STRONG_HITS: %w", err)
+		}
+		cfg.Generate.TargetStrongHits = parsed
+	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_MAX_STALL_BATCHES"); ok && value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_MAX_STALL_BATCHES: %w", err)
+		}
+		cfg.Generate.MaxStallBatches = parsed
+	}
 
 	if cli.OpenAIModel != "" {
 		cfg.OpenAI.Model = cli.OpenAIModel
@@ -221,6 +251,15 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	}
 	if cli.GenerateAvoidSuffixes != "" {
 		cfg.Generate.AvoidSuffixes = parseCSVList(cli.GenerateAvoidSuffixes)
+	}
+	if cli.GenerateMaxCostUSD > 0 {
+		cfg.Generate.MaxCostUSD = cli.GenerateMaxCostUSD
+	}
+	if cli.GenerateTargetStrongHits > 0 {
+		cfg.Generate.TargetStrongHits = cli.GenerateTargetStrongHits
+	}
+	if cli.GenerateMaxStallBatches > 0 {
+		cfg.Generate.MaxStallBatches = cli.GenerateMaxStallBatches
 	}
 	if cli.PostgresDSN != "" {
 		cfg.Postgres.DSN = cli.PostgresDSN
@@ -274,6 +313,15 @@ func applyFileConfig(cfg *Config, fc fileConfig) {
 	}
 	if fc.GenerateAvoidSuffixes != "" {
 		cfg.Generate.AvoidSuffixes = parseCSVList(fc.GenerateAvoidSuffixes)
+	}
+	if fc.GenerateMaxCostUSD > 0 {
+		cfg.Generate.MaxCostUSD = fc.GenerateMaxCostUSD
+	}
+	if fc.GenerateTargetStrongHits > 0 {
+		cfg.Generate.TargetStrongHits = fc.GenerateTargetStrongHits
+	}
+	if fc.GenerateMaxStallBatches > 0 {
+		cfg.Generate.MaxStallBatches = fc.GenerateMaxStallBatches
 	}
 	if fc.PostgresDSN != "" {
 		cfg.Postgres.DSN = fc.PostgresDSN
@@ -368,6 +416,24 @@ func loadFile(path string) (fileConfig, error) {
 			cfg.GenerateAvoidPrefixes = value
 		case "generate.avoid_suffixes":
 			cfg.GenerateAvoidSuffixes = value
+		case "generate.max_cost_usd":
+			parsed, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				return fileConfig{}, fmt.Errorf("parse %s generate.max_cost_usd: %w", path, err)
+			}
+			cfg.GenerateMaxCostUSD = parsed
+		case "generate.target_strong_hits":
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return fileConfig{}, fmt.Errorf("parse %s generate.target_strong_hits: %w", path, err)
+			}
+			cfg.GenerateTargetStrongHits = parsed
+		case "generate.max_stall_batches":
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return fileConfig{}, fmt.Errorf("parse %s generate.max_stall_batches: %w", path, err)
+			}
+			cfg.GenerateMaxStallBatches = parsed
 		case "postgres.dsn":
 			cfg.PostgresDSN = value
 		default:

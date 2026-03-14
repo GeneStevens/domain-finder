@@ -14,16 +14,19 @@ const systemPrompt = "You generate candidate domain stems. Return JSON only. Pro
 // PromptInput describes one generation request before it is turned into the
 // final OpenAI instruction payload.
 type PromptInput struct {
-	QualityProfile  string
-	Theme           string
-	Style           string
-	MaxLength       int
-	MaxSyllables    int
-	Prefix          string
-	Suffix          string
-	AvoidSubstrings []string
-	AvoidPrefixes   []string
-	AvoidSuffixes   []string
+	QualityProfile   string
+	Theme            string
+	Style            string
+	MaxLength        int
+	MaxSyllables     int
+	Prefix           string
+	Suffix           string
+	AvoidSubstrings  []string
+	AvoidPrefixes    []string
+	AvoidSuffixes    []string
+	MaxCostUSD       float64
+	TargetStrongHits int
+	MaxStallBatches  int
 }
 
 // PromptBuilder constructs disciplined generation instructions.
@@ -47,6 +50,9 @@ type Contract struct {
 	AvoidSubstrings     []string
 	AvoidPrefixes       []string
 	AvoidSuffixes       []string
+	MaxCostUSD          float64
+	TargetStrongHits    int
+	MaxStallBatches     int
 	SystemPrompt        string
 	UserPrompt          string
 }
@@ -54,16 +60,19 @@ type Contract struct {
 // NewPromptInput builds a prompt input from resolved config and the CLI theme.
 func NewPromptInput(theme string, generate config.GenerateConfig) PromptInput {
 	return PromptInput{
-		QualityProfile:  strings.TrimSpace(generate.QualityProfile),
-		Theme:           strings.TrimSpace(theme),
-		Style:           strings.TrimSpace(generate.Style),
-		MaxLength:       generate.MaxLength,
-		MaxSyllables:    generate.MaxSyllables,
-		Prefix:          strings.TrimSpace(generate.Prefix),
-		Suffix:          strings.TrimSpace(generate.Suffix),
-		AvoidSubstrings: append([]string(nil), generate.AvoidSubstrings...),
-		AvoidPrefixes:   append([]string(nil), generate.AvoidPrefixes...),
-		AvoidSuffixes:   append([]string(nil), generate.AvoidSuffixes...),
+		QualityProfile:   strings.TrimSpace(generate.QualityProfile),
+		Theme:            strings.TrimSpace(theme),
+		Style:            strings.TrimSpace(generate.Style),
+		MaxLength:        generate.MaxLength,
+		MaxSyllables:     generate.MaxSyllables,
+		Prefix:           strings.TrimSpace(generate.Prefix),
+		Suffix:           strings.TrimSpace(generate.Suffix),
+		AvoidSubstrings:  append([]string(nil), generate.AvoidSubstrings...),
+		AvoidPrefixes:    append([]string(nil), generate.AvoidPrefixes...),
+		AvoidSuffixes:    append([]string(nil), generate.AvoidSuffixes...),
+		MaxCostUSD:       generate.MaxCostUSD,
+		TargetStrongHits: generate.TargetStrongHits,
+		MaxStallBatches:  generate.MaxStallBatches,
 	}
 }
 
@@ -87,6 +96,9 @@ func (b PromptBuilder) BuildContract(cfg config.Config, theme string) Contract {
 		AvoidSubstrings:     append([]string(nil), input.AvoidSubstrings...),
 		AvoidPrefixes:       append([]string(nil), input.AvoidPrefixes...),
 		AvoidSuffixes:       append([]string(nil), input.AvoidSuffixes...),
+		MaxCostUSD:          input.MaxCostUSD,
+		TargetStrongHits:    input.TargetStrongHits,
+		MaxStallBatches:     input.MaxStallBatches,
 		SystemPrompt:        systemPrompt,
 		UserPrompt:          b.BuildUserPrompt(input, cfg.Generate.Count),
 	}
@@ -131,6 +143,15 @@ func (PromptBuilder) BuildUserPrompt(input PromptInput, count int) string {
 	if len(input.AvoidSuffixes) > 0 {
 		lines = append(lines, fmt.Sprintf("Hard constraint: do not return stems ending with any of these suffixes: %s.", formatQuotedList(input.AvoidSuffixes)))
 	}
+	if input.MaxCostUSD > 0 {
+		lines = append(lines, fmt.Sprintf("Run policy: generation may stop once estimated spend reaches $%.2f.", input.MaxCostUSD))
+	}
+	if input.TargetStrongHits > 0 {
+		lines = append(lines, fmt.Sprintf("Run policy: generation may stop once %d strong all-zone hits are found.", input.TargetStrongHits))
+	}
+	if input.MaxStallBatches > 0 {
+		lines = append(lines, fmt.Sprintf("Run policy: generation may stop after %d consecutive stall batches with no accepted stems and no strong-hit progress.", input.MaxStallBatches))
+	}
 	lines = append(lines, "Do not include bullets, numbering, commentary, or duplicate stems.")
 	return strings.Join(lines, "\n")
 }
@@ -154,6 +175,9 @@ func RenderContract(contract Contract) string {
 	fmt.Fprintf(&out, "  avoid_substrings: %s\n", renderOptionalList(contract.AvoidSubstrings))
 	fmt.Fprintf(&out, "  avoid_prefixes: %s\n", renderOptionalList(contract.AvoidPrefixes))
 	fmt.Fprintf(&out, "  avoid_suffixes: %s\n", renderOptionalList(contract.AvoidSuffixes))
+	fmt.Fprintf(&out, "  max_cost_usd: %s\n", renderOptionalFloat(contract.MaxCostUSD))
+	fmt.Fprintf(&out, "  target_strong_hits: %s\n", renderOptionalInt(contract.TargetStrongHits))
+	fmt.Fprintf(&out, "  max_stall_batches: %s\n", renderOptionalInt(contract.MaxStallBatches))
 	fmt.Fprintf(&out, "\n")
 	fmt.Fprintf(&out, "system prompt\n")
 	fmt.Fprintf(&out, "%s\n", contract.SystemPrompt)
@@ -167,13 +191,16 @@ func RenderContract(contract Contract) string {
 // the fully resolved generation contract.
 func RenderContractJSON(contract Contract) ([]byte, error) {
 	type constraints struct {
-		MaxLength       int      `json:"max_length,omitempty"`
-		MaxSyllables    int      `json:"max_syllables,omitempty"`
-		Prefix          string   `json:"prefix,omitempty"`
-		Suffix          string   `json:"suffix,omitempty"`
-		AvoidSubstrings []string `json:"avoid_substrings,omitempty"`
-		AvoidPrefixes   []string `json:"avoid_prefixes,omitempty"`
-		AvoidSuffixes   []string `json:"avoid_suffixes,omitempty"`
+		MaxLength        int      `json:"max_length,omitempty"`
+		MaxSyllables     int      `json:"max_syllables,omitempty"`
+		Prefix           string   `json:"prefix,omitempty"`
+		Suffix           string   `json:"suffix,omitempty"`
+		AvoidSubstrings  []string `json:"avoid_substrings,omitempty"`
+		AvoidPrefixes    []string `json:"avoid_prefixes,omitempty"`
+		AvoidSuffixes    []string `json:"avoid_suffixes,omitempty"`
+		MaxCostUSD       float64  `json:"max_cost_usd,omitempty"`
+		TargetStrongHits int      `json:"target_strong_hits,omitempty"`
+		MaxStallBatches  int      `json:"max_stall_batches,omitempty"`
 	}
 	type view struct {
 		Model          string      `json:"model"`
@@ -199,13 +226,16 @@ func RenderContractJSON(contract Contract) ([]byte, error) {
 		Theme:          contract.Theme,
 		Style:          contract.Style,
 		Constraints: constraints{
-			MaxLength:       contract.MaxLength,
-			MaxSyllables:    contract.MaxSyllables,
-			Prefix:          contract.Prefix,
-			Suffix:          contract.Suffix,
-			AvoidSubstrings: append([]string(nil), contract.AvoidSubstrings...),
-			AvoidPrefixes:   append([]string(nil), contract.AvoidPrefixes...),
-			AvoidSuffixes:   append([]string(nil), contract.AvoidSuffixes...),
+			MaxLength:        contract.MaxLength,
+			MaxSyllables:     contract.MaxSyllables,
+			Prefix:           contract.Prefix,
+			Suffix:           contract.Suffix,
+			AvoidSubstrings:  append([]string(nil), contract.AvoidSubstrings...),
+			AvoidPrefixes:    append([]string(nil), contract.AvoidPrefixes...),
+			AvoidSuffixes:    append([]string(nil), contract.AvoidSuffixes...),
+			MaxCostUSD:       contract.MaxCostUSD,
+			TargetStrongHits: contract.TargetStrongHits,
+			MaxStallBatches:  contract.MaxStallBatches,
 		},
 		SystemPrompt: contract.SystemPrompt,
 		UserPrompt:   contract.UserPrompt,
@@ -241,4 +271,11 @@ func renderOptionalInt(value int) string {
 		return "(none)"
 	}
 	return fmt.Sprintf("%d", value)
+}
+
+func renderOptionalFloat(value float64) string {
+	if value <= 0 {
+		return "(none)"
+	}
+	return fmt.Sprintf("%.2f", value)
 }

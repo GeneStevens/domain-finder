@@ -109,6 +109,9 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-avoid-substrings` hard-bans low-value lexical families from generated stems
 - `-generate-avoid-prefixes` hard-bans generated stems that start with certain prefixes
 - `-generate-avoid-suffixes` hard-bans generated stems that end with certain suffixes
+- `-generate-max-cost-usd` stops generation once cumulative estimated spend reaches the configured USD cap
+- `-generate-target-strong-hits` stops generation once enough all-zone strong hits have been found
+- `-generate-max-stall-batches` stops generation after too many consecutive no-progress batches
 - `-generate-dry-run` prints the fully resolved generation contract and exits before any OpenAI call
 - `-generate-dry-run-format text|json` chooses human-readable or machine-readable inspection output
 - `-audit-log <path>` writes one audit JSONL record per checked stem
@@ -144,10 +147,38 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - family rejections appear in diagnostics as `family_rejected`
 - `-generate-dry-run` uses the same resolved config and prompt builder, but does not require an API key and does not touch the network
 
+## Budget- and goal-driven stop conditions
+
+- Generation can now stop on any configured stop condition:
+  - accepted-count target
+  - estimated cost cap
+  - strong-hit target
+  - stall limit
+- The default fallback still uses `-generate-count` as the accepted-count stop condition
+- If additional stop controls are configured, the run ends when any configured condition is reached first
+- `-generate-max-cost-usd` uses cumulative estimated spend from OpenAI `usage` plus the repo pricing table
+- Cost-cap runs require known pricing for the selected model
+  - if pricing is unavailable, the run fails clearly instead of silently ignoring the cap
+- `-generate-target-strong-hits` tracks the strongest current result class:
+  - stems absent across all requested zones
+  - the same `all ✓` semantics shown in the interactive table
+- `-generate-max-stall-batches` uses a simple, explicit stall definition:
+  - consecutive batches with zero newly accepted generated stems
+  - and zero increase in strong all-zone hits
+- Batch status lines now show compact progress such as:
+  - `strong 3/25`
+  - `stall 2/8`
+  - `cost $0.18/1.00`
+- At the end of a generation run, text mode prints a compact `generation stop` block explaining which condition ended the run
+- The run-summary artifact also records:
+  - configured stop-condition settings
+  - actual stop reason at run end
+
 ## Generation dry run
 
 - `-generate-dry-run` is an inspection mode for prompt tuning
 - It prints the resolved model, generation counts, retry policy, quality profile, theme, style, structural constraints, and the final prompt-builder output
+- It also prints the resolved stop-condition policy such as cost cap, strong-hit target, and stall limit
 - `-generate-dry-run-format text` keeps the current readable inspection block
 - `-generate-dry-run-format json` emits a stable JSON contract for diffing, archiving, and tooling
 - It exits before backend loading, OpenAI client creation, or any network call
@@ -231,6 +262,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - whether interactive mode was used
   - final checked/emitted/strong-hit counts
   - generation settings when generation was used
+  - configured stop-condition settings and final stop reason when generation was used
   - generation token totals and estimated cost when usage data was available
   - aggregated generation diagnostics and rejection categories
 - Use it when you want one stable artifact per run for diffing, archiving, or comparing prompt/profile changes over time
@@ -480,6 +512,24 @@ go run ./cmd/domain-finder \
   -generate-avoid-suffixes "io,ia,ora,iva,ara"
 ```
 
+Budget-shaped exploratory generation:
+
+```sh
+export OPENAI_API_KEY=your-key-here
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -backend file \
+  -interactive \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -generate "industrial infrastructure names" \
+  -generate-quality-profile industrial \
+  -generate-count 200 \
+  -generate-max-cost-usd 1.00 \
+  -generate-target-strong-hits 25 \
+  -generate-max-stall-batches 8
+```
+
 Dry-run prompt inspection without spending API calls:
 
 ```sh
@@ -492,7 +542,10 @@ go run ./cmd/domain-finder \
   -generate-max-length 12 \
   -generate-max-syllables 3 \
   -generate-prefix dev \
-  -generate-suffix io
+  -generate-suffix io \
+  -generate-max-cost-usd 1.00 \
+  -generate-target-strong-hits 25 \
+  -generate-max-stall-batches 8
 ```
 
 Machine-readable dry-run contract:
@@ -508,13 +561,16 @@ go run ./cmd/domain-finder \
   -generate-max-length 12 \
   -generate-max-syllables 3 \
   -generate-prefix dev \
-  -generate-suffix io
+  -generate-suffix io \
+  -generate-max-cost-usd 1.00 \
+  -generate-target-strong-hits 25 \
+  -generate-max-stall-batches 8
 ```
 
 Typical operator feedback during generation:
 
 - `generation: batch 1 attempt 1 requesting 3 stems`
-- `generation: batch 1 attempt 1 accepted 2, invalid 1, banned 0, quality_rejected 1, duplicates 0, need 1 more`
+- `generation: batch 1 attempt 1 accepted 2, invalid 1, banned 0, quality_rejected 1, duplicates 0, need 1 more | strong 1/25 | stall 0/8 | cost $0.03/1.00`
 - `generation diagnostics`
 - `  banned_prefix: 3`
 - `  banned_suffix: 4`
@@ -522,7 +578,12 @@ Typical operator feedback during generation:
 - `  family_rejected: 2`
 - `  duplicates: 2`
 - `generation: retrying batch 1 attempt 2 (1/2) after transient error`
-- `generation: complete, accepted 6 stems`
+- `generation: complete, accepted 6 stems | total $0.18 | stop strong-hit target reached`
+- `generation stop`
+- `  reason: strong-hit target reached`
+- `  strong_hits: 25/25`
+- `  stall_batches: 0/8`
+- `  estimated_cost_usd: $0.18/1.00`
 
 Example generation tuning in YAML:
 
@@ -532,6 +593,9 @@ generate:
   batch_size: 10
   max_attempts: 3
   retry_count: 2
+  max_cost_usd: 1.00
+  target_strong_hits: 25
+  max_stall_batches: 8
   quality_profile: industrial
   max_length: 10
   max_syllables: 3

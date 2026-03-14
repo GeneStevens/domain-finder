@@ -60,7 +60,11 @@ func TestWriteArtifactJSON(t *testing.T) {
 			QualityProfile:    "industrial",
 			AvoidPrefixes:     []string{"dev", "neo"},
 			AvoidSuffixes:     []string{"ia", "ora"},
+			MaxCostUSD:        1.00,
+			TargetStrongHits:  3,
+			MaxStallBatches:   4,
 			AcceptedCount:     3,
+			StopReason:        "strong_hit_target_reached",
 			InputTokens:       120,
 			OutputTokens:      18,
 			CachedInputTokens: 40,
@@ -97,5 +101,11 @@ func TestWriteArtifactJSON(t *testing.T) {
 	}
 	if _, ok := generation["avoid_suffixes"]; !ok {
 		t.Fatalf("generation = %#v, want avoid_suffixes", generation)
+	}
+	if generation["max_cost_usd"] != float64(1) || generation["target_strong_hits"] != float64(3) || generation["max_stall_batches"] != float64(4) {
+		t.Fatalf("generation = %#v, want stop condition fields", generation)
+	}
+	if generation["stop_reason"] != "strong_hit_target_reached" {
+		t.Fatalf("generation = %#v, want stop_reason field", generation)
 	}
 }

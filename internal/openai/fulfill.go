@@ -107,6 +107,7 @@ type Event struct {
 	Usage           *Usage
 	LastEstimate    UsageEstimate
 	Totals          UsageTotals
+	Stop            StopSnapshot
 	Err             error
 }
 
@@ -162,10 +163,10 @@ func NewFulfiller(generator StemGenerator, cfg config.GenerateConfig) *Fulfiller
 
 // Fulfill requests generated stems until the requested total is satisfied or
 // the bounded attempt policy is exhausted.
-func (f *Fulfiller) Fulfill(ctx context.Context, prompt string, totalRequested int, accept func([]string, int) (candidates.BatchReport, error), notify func(Event) error) (UsageTotals, error) {
+func (f *Fulfiller) Fulfill(ctx context.Context, prompt string, totalRequested int, accept func(BatchResult, int) (candidates.BatchReport, error), notify func(Event) error) (UsageTotals, *StopSnapshot, error) {
 	var totals UsageTotals
 	if totalRequested <= 0 {
-		return totals, nil
+		return totals, nil, nil
 	}
 	totalAccepted := 0
 	batchNumber := 0
@@ -189,7 +190,7 @@ func (f *Fulfiller) Fulfill(ctx context.Context, prompt string, totalRequested i
 				RemainingBatch: need,
 				RemainingTotal: remainingTotal,
 			}); err != nil {
-				return totals, err
+				return totals, nil, err
 			}
 
 			batchResult, err := f.requestWithRetry(ctx, prompt, need, batchNumber, attempt, notify)
@@ -205,7 +206,7 @@ func (f *Fulfiller) Fulfill(ctx context.Context, prompt string, totalRequested i
 						RemainingTotal: remainingTotal,
 						Err:            err,
 					}); err != nil {
-						return totals, err
+						return totals, nil, err
 					}
 					continue
 				}
@@ -218,14 +219,20 @@ func (f *Fulfiller) Fulfill(ctx context.Context, prompt string, totalRequested i
 					RemainingTotal: remainingTotal,
 					Err:            err,
 				}); err != nil {
-					return totals, err
+					return totals, nil, err
 				}
-				return totals, &FulfillmentError{Requested: totalRequested, Accepted: totalAccepted, Cause: err}
+				return totals, nil, &FulfillmentError{Requested: totalRequested, Accepted: totalAccepted, Cause: err}
 			}
 
-			report, err := accept(batchResult.Stems, need)
+			report, err := accept(batchResult, need)
+			var stop *StopSnapshot
 			if err != nil {
-				return totals, err
+				var stopErr *StopError
+				if errors.As(err, &stopErr) {
+					stop = &stopErr.Snapshot
+				} else {
+					return totals, nil, err
+				}
 			}
 			batchAccepted += len(report.Accepted)
 			totalAccepted += len(report.Accepted)
@@ -248,7 +255,13 @@ func (f *Fulfiller) Fulfill(ctx context.Context, prompt string, totalRequested i
 				RemainingBatch:  target - batchAccepted,
 				RemainingTotal:  remainingTotal,
 			}); err != nil {
-				return totals, err
+				return totals, nil, err
+			}
+			if stop != nil {
+				if err := notifyEvent(notify, Event{Type: EventComplete, Accepted: totalAccepted, Totals: totals, Stop: *stop}); err != nil {
+					return totals, nil, err
+				}
+				return totals, stop, nil
 			}
 		}
 
@@ -265,13 +278,13 @@ func (f *Fulfiller) Fulfill(ctx context.Context, prompt string, totalRequested i
 				RemainingTotal: totalRequested - totalAccepted,
 				Err:            err,
 			}); notifyErr != nil {
-				return totals, notifyErr
+				return totals, nil, notifyErr
 			}
-			return totals, err
+			return totals, nil, err
 		}
 	}
 
-	return totals, notifyEvent(notify, Event{Type: EventComplete, Accepted: totalAccepted, Totals: totals})
+	return totals, nil, notifyEvent(notify, Event{Type: EventComplete, Accepted: totalAccepted, Totals: totals})
 }
 
 func (f *Fulfiller) requestWithRetry(ctx context.Context, prompt string, count, batch, attempt int, notify func(Event) error) (BatchResult, error) {

@@ -869,7 +869,10 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 		"  style: security product\n" +
 		"  avoid_substrings: dev,cloud\n" +
 		"  avoid_prefixes: dev,neo\n" +
-		"  avoid_suffixes: ia,ora\n"
+		"  avoid_suffixes: ia,ora\n" +
+		"  max_cost_usd: 0.50\n" +
+		"  target_strong_hits: 4\n" +
+		"  max_stall_batches: 5\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -945,11 +948,14 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 	if got := strings.Join(captured.AvoidSuffixes, ","); got != "ia,ora" {
 		t.Fatalf("captured.AvoidSuffixes = %q, want ia,ora from config", got)
 	}
-	if len(generator.calls) != 3 || generator.calls[0] != 2 || generator.calls[1] != 2 || generator.calls[2] != 1 {
-		t.Fatalf("generator calls = %#v, want [2 2 1]", generator.calls)
+	if captured.MaxCostUSD != 0.50 || captured.TargetStrongHits != 4 || captured.MaxStallBatches != 5 {
+		t.Fatalf("captured stop conditions = %#v, want cost/strong/stall from config", captured)
 	}
-	if !strings.Contains(stderr.String(), "generation: complete, accepted 5 stems") {
-		t.Fatalf("stderr = %q, want generation completion", stderr.String())
+	if len(generator.calls) != 2 || generator.calls[0] != 2 || generator.calls[1] != 2 {
+		t.Fatalf("generator calls = %#v, want [2 2]", generator.calls)
+	}
+	if !strings.Contains(stderr.String(), "generation: complete, accepted 4 stems | stop strong-hit target reached") {
+		t.Fatalf("stderr = %q, want stop-aware generation completion", stderr.String())
 	}
 }
 
@@ -971,7 +977,10 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"  style: security product\n" +
 		"  avoid_substrings: dev,cloud\n" +
 		"  avoid_prefixes: dev,neo\n" +
-		"  avoid_suffixes: ia,ora\n"
+		"  avoid_suffixes: ia,ora\n" +
+		"  max_cost_usd: 0.50\n" +
+		"  target_strong_hits: 4\n" +
+		"  max_stall_batches: 5\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1019,6 +1028,9 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"avoid_substrings: dev, cloud",
 		"avoid_prefixes: dev, neo",
 		"avoid_suffixes: ia, ora",
+		"max_cost_usd: 0.50",
+		"target_strong_hits: 4",
+		"max_stall_batches: 5",
 		"system prompt",
 		"user prompt",
 	}
@@ -1045,7 +1057,10 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"  style: security product\n" +
 		"  avoid_substrings: dev,cloud\n" +
 		"  avoid_prefixes: dev,neo\n" +
-		"  avoid_suffixes: ia,ora\n"
+		"  avoid_suffixes: ia,ora\n" +
+		"  max_cost_usd: 0.50\n" +
+		"  target_strong_hits: 4\n" +
+		"  max_stall_batches: 5\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1079,6 +1094,9 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"-generate-avoid-substrings", "stack,forge,cloud",
 		"-generate-avoid-prefixes", "dev,neo",
 		"-generate-avoid-suffixes", "ia,ora",
+		"-generate-max-cost-usd", "1.25",
+		"-generate-target-strong-hits", "8",
+		"-generate-max-stall-batches", "6",
 	}, strings.NewReader(""), &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -1098,6 +1116,9 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"avoid_substrings: stack, forge, cloud",
 		"avoid_prefixes: dev, neo",
 		"avoid_suffixes: ia, ora",
+		"max_cost_usd: 1.25",
+		"target_strong_hits: 8",
+		"max_stall_batches: 6",
 		"start with `dev`",
 		"end with `io`",
 	}
@@ -1125,7 +1146,10 @@ func TestRunGenerateDryRunJSONOutput(t *testing.T) {
 		"  suffix: ix\n" +
 		"  style: security product\n" +
 		"  avoid_prefixes: dev,neo\n" +
-		"  avoid_suffixes: ia,ora\n"
+		"  avoid_suffixes: ia,ora\n" +
+		"  max_cost_usd: 0.50\n" +
+		"  target_strong_hits: 4\n" +
+		"  max_stall_batches: 5\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1184,6 +1208,9 @@ func TestRunGenerateDryRunJSONOutput(t *testing.T) {
 	if len(avoidSuffixes) != 2 || avoidSuffixes[0] != "ia" || avoidSuffixes[1] != "ora" {
 		t.Fatalf("avoid_suffixes = %#v, want [ia ora]", avoidSuffixes)
 	}
+	if constraints["max_cost_usd"] != 0.5 || constraints["target_strong_hits"] != float64(4) || constraints["max_stall_batches"] != float64(5) {
+		t.Fatalf("constraints = %#v, want stop-condition values", constraints)
+	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty dry-run stderr", stderr.String())
 	}
@@ -1204,7 +1231,10 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		"  suffix: ix\n" +
 		"  style: security product\n" +
 		"  avoid_prefixes: dev,neo\n" +
-		"  avoid_suffixes: ia,ora\n"
+		"  avoid_suffixes: ia,ora\n" +
+		"  max_cost_usd: 0.50\n" +
+		"  target_strong_hits: 4\n" +
+		"  max_stall_batches: 5\n"
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1230,6 +1260,9 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		"-generate-style", "developer tool",
 		"-generate-avoid-prefixes", "sys,neo",
 		"-generate-avoid-suffixes", "io,iva",
+		"-generate-max-cost-usd", "1.25",
+		"-generate-target-strong-hits", "8",
+		"-generate-max-stall-batches", "6",
 	}, strings.NewReader(""), &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
@@ -1256,6 +1289,9 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 	avoidSuffixes := constraints["avoid_suffixes"].([]any)
 	if len(avoidSuffixes) != 2 || avoidSuffixes[0] != "io" || avoidSuffixes[1] != "iva" {
 		t.Fatalf("avoid_suffixes = %#v, want [io iva]", avoidSuffixes)
+	}
+	if constraints["max_cost_usd"] != 1.25 || constraints["target_strong_hits"] != float64(8) || constraints["max_stall_batches"] != float64(6) {
+		t.Fatalf("constraints = %#v, want CLI stop-condition values", constraints)
 	}
 	if got["style"] != "developer tool" {
 		t.Fatalf("style = %#v, want developer tool", got["style"])
@@ -1473,6 +1509,192 @@ func TestRunGenerationRunSummaryIncludesDiagnostics(t *testing.T) {
 	}
 	if stderr.Len() == 0 {
 		t.Fatalf("stderr = %q, want normal generation status output", stderr.String())
+	}
+}
+
+func TestRunGenerationStopsOnCostCap(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("openai:\n  model: gpt-4o-mini\ngenerate:\n  count: 4\n  batch_size: 2\n  max_cost_usd: 0.00002\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		model: "gpt-4o-mini",
+		responses: []fakeStemResponse{
+			{result: openai.BatchResult{
+				Stems: []string{"noviq", "traktor"},
+				Usage: &openai.Usage{InputTokens: 120, OutputTokens: 18, CachedInputTokens: 40},
+			}},
+			{result: openai.BatchResult{
+				Stems: []string{"qentil", "kinrox"},
+				Usage: &openai.Usage{InputTokens: 80, OutputTokens: 12},
+			}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-generate", "industrial infrastructure names",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(generator.calls) != 1 {
+		t.Fatalf("generator calls = %#v, want one batch before cost stop", generator.calls)
+	}
+	if !strings.Contains(stderr.String(), "cost cap reached") {
+		t.Fatalf("stderr = %q, want cost-cap stop reason", stderr.String())
+	}
+}
+
+func TestRunGenerationStopsOnStrongHitTarget(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 4\n  batch_size: 2\n  target_strong_hits: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		model: "gpt-4o-mini",
+		responses: []fakeStemResponse{
+			{result: openai.BatchResult{Stems: []string{"noviq", "example"}}},
+			{result: openai.BatchResult{Stems: []string{"qentil", "kinrox"}}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-generate", "industrial infrastructure names",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(generator.calls) != 1 {
+		t.Fatalf("generator calls = %#v, want one batch before strong-hit stop", generator.calls)
+	}
+	if !strings.Contains(stderr.String(), "strong-hit target reached") {
+		t.Fatalf("stderr = %q, want strong-hit stop reason", stderr.String())
+	}
+}
+
+func TestRunGenerationStopsOnStallLimit(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 4\n  batch_size: 2\n  max_stall_batches: 1\n  avoid_substrings: dev,cloud\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		model: "gpt-4o-mini",
+		responses: []fakeStemResponse{
+			{result: openai.BatchResult{Stems: []string{"devspark", "cloudbase"}}},
+			{result: openai.BatchResult{Stems: []string{"noviq", "traktor"}}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-generate", "industrial infrastructure names",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(generator.calls) != 1 {
+		t.Fatalf("generator calls = %#v, want one stalled batch then stop", generator.calls)
+	}
+	if !strings.Contains(stderr.String(), "stall limit reached") {
+		t.Fatalf("stderr = %q, want stall stop reason", stderr.String())
+	}
+}
+
+func TestRunSummaryIncludesStopReason(t *testing.T) {
+	dir := t.TempDir()
+	summaryPath := filepath.Join(dir, "run-summary.json")
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 4\n  batch_size: 2\n  target_strong_hits: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		model: "gpt-4o-mini",
+		responses: []fakeStemResponse{
+			{result: openai.BatchResult{Stems: []string{"noviq", "example"}}},
+			{result: openai.BatchResult{Stems: []string{"qentil", "kinrox"}}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-run-summary", summaryPath,
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-generate", "industrial infrastructure names",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	data, err := os.ReadFile(summaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\n%s", err, string(data))
+	}
+	generation := got["generation"].(map[string]any)
+	if generation["target_strong_hits"] != float64(1) {
+		t.Fatalf("generation = %#v, want target_strong_hits 1", generation)
+	}
+	if generation["stop_reason"] != "strong_hit_target_reached" {
+		t.Fatalf("generation = %#v, want strong-hit stop reason", generation)
 	}
 }
 

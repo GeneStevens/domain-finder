@@ -1,6 +1,15 @@
 # Copy to domain-finder.yaml and customize for your environment.
 # This is meant to be a practical blueprint, not just a minimal stub.
 
+backend: file
+filter: absent-in-all
+
+# File backend uses explicit zone=path mappings.
+# Postgres backend would instead use plain zone names plus postgres.dsn.
+zones:
+  - com=testdata/small/com.zone
+  - net=testdata/small/net.zone.slice
+
 postgres:
   dsn: ""
 
@@ -8,10 +17,14 @@ openai:
   model: gpt-4o-mini
 
 generate:
-  count: 20
+  # Keep count as a fallback stop condition even when budget/goal conditions are also set.
+  count: 200
   batch_size: 10
   max_attempts: 3
   retry_count: 2
+  max_cost_usd: 1.00
+  target_strong_hits: 25
+  max_stall_batches: 8
   quality_profile: industrial
   max_length: 10
   max_syllables: 3
