@@ -18,6 +18,7 @@ const (
 type Config struct {
 	OpenAI   OpenAIConfig
 	Generate GenerateConfig
+	Postgres PostgresConfig
 }
 
 type OpenAIConfig struct {
@@ -32,11 +33,16 @@ type GenerateConfig struct {
 	RetryCount          int
 }
 
+type PostgresConfig struct {
+	DSN string
+}
+
 // CLIOverrides are the CLI-provided config overrides.
 type CLIOverrides struct {
 	OpenAIModel       string
 	GenerateCount     int
 	GenerateBatchSize int
+	PostgresDSN       string
 }
 
 type fileConfig struct {
@@ -46,6 +52,7 @@ type fileConfig struct {
 	GenerateBatchSize   int
 	GenerateMaxAttempts int
 	GenerateRetryCount  int
+	PostgresDSN         string
 }
 
 // Load resolves configuration using precedence:
@@ -80,6 +87,9 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 
 	if value, ok := lookupEnv("OPENAI_API_KEY"); ok && value != "" {
 		cfg.OpenAI.APIKey = value
+	}
+	if value, ok := lookupEnv("PG_DSN"); ok && value != "" {
+		cfg.Postgres.DSN = value
 	}
 	if value, ok := lookupEnv("DOMAINFINDER_OPENAI_MODEL"); ok && value != "" {
 		cfg.OpenAI.Model = value
@@ -122,6 +132,9 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	if cli.GenerateBatchSize > 0 {
 		cfg.Generate.BatchSize = cli.GenerateBatchSize
 	}
+	if cli.PostgresDSN != "" {
+		cfg.Postgres.DSN = cli.PostgresDSN
+	}
 
 	return cfg, nil
 }
@@ -144,6 +157,9 @@ func applyFileConfig(cfg *Config, fc fileConfig) {
 	}
 	if fc.GenerateRetryCount >= 0 {
 		cfg.Generate.RetryCount = fc.GenerateRetryCount
+	}
+	if fc.PostgresDSN != "" {
+		cfg.Postgres.DSN = fc.PostgresDSN
 	}
 }
 
@@ -208,6 +224,8 @@ func loadFile(path string) (fileConfig, error) {
 				return fileConfig{}, fmt.Errorf("parse %s generate.retry_count: %w", path, err)
 			}
 			cfg.GenerateRetryCount = parsed
+		case "postgres.dsn":
+			cfg.PostgresDSN = value
 		default:
 			return fileConfig{}, fmt.Errorf("parse config %q: unknown key %s.%s", path, section, key)
 		}

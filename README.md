@@ -11,6 +11,7 @@ The repository currently uses stem-based matching across loaded zones:
 - `internal/zonefile` for opening files and detecting gzip by content
 - streaming line-by-line zone reading
 - `internal/index` for exact-match named-zone indexing and deterministic lookup
+- `internal/backend` for backend-neutral file and PostgreSQL exact-match lookups
 - `internal/candidates` for stem loading, normalization, merge, and dedupe
 - `internal/config` for YAML config loading with CLI/env/local/base/default precedence
 - `internal/match` for stable per-stem classification across loaded zones
@@ -33,6 +34,31 @@ full `.com` or `.net` CZDS zone files.
   - `example.com`
   - `example.net`
 - Zone indexes still store normalized FQDN owner names from the zone files
+
+## Backends
+
+- `-backend file` keeps the existing zone-file lookup behavior
+- `-backend postgres` checks exact stem presence against PostgreSQL Domain Miner data
+- The result model stays stem-based and backend-neutral
+
+### Zone syntax by backend
+
+- File backend:
+  - `-zone com=path/to/com.zone`
+  - `-zone net=path/to/net.zone`
+- PostgreSQL backend:
+  - `-zone com`
+  - `-zone net`
+
+### PostgreSQL exact-match semantics
+
+- Query shape uses `SELECT EXISTS (...)`
+- Exact match keys:
+  - `zone_file = <zone>`
+  - `name = <stem>`
+- Assumed schema:
+  - table `dm.zone_records`
+  - columns `zone_file`, `name`
 
 ## Candidate file and stdin format
 
@@ -61,6 +87,7 @@ full `.com` or `.net` CZDS zone files.
   4. `domain-finder.yaml`
   5. built-in defaults
 - `OPENAI_API_KEY` is the primary secret source
+- `PG_DSN` can provide the PostgreSQL connection string
 - `domain-finder.local.yaml` may contain a local fallback `openai.api_key`
 - `domain-finder.yaml` must not contain API keys
 - `domain-finder.local.yaml` is ignored by git
@@ -125,6 +152,7 @@ Stem-based CLI input:
 ```sh
 env GOCACHE=/tmp/domain-finder-gocache \
 go run ./cmd/domain-finder \
+  -backend file \
   -no-interactive \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
@@ -137,6 +165,7 @@ Stem-based candidate-file input:
 ```sh
 env GOCACHE=/tmp/domain-finder-gocache \
 go run ./cmd/domain-finder \
+  -backend file \
   -interactive \
   -filter absent-in-all \
   -zone com=testdata/small/com.zone \
@@ -150,6 +179,7 @@ Stem-based stdin input:
 printf 'missing\nexample\n' | \
 env GOCACHE=/tmp/domain-finder-gocache \
 go run ./cmd/domain-finder \
+  -backend file \
   -no-interactive \
   -candidate-stdin \
   -zone com=testdata/small/com.zone \
@@ -161,6 +191,7 @@ Interactive console with stems:
 ```sh
 env GOCACHE=/tmp/domain-finder-gocache \
 go run ./cmd/domain-finder \
+  -backend file \
   -interactive \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
@@ -175,6 +206,7 @@ cp domain-finder.yaml.example domain-finder.yaml
 export OPENAI_API_KEY=your-key-here
 env GOCACHE=/tmp/domain-finder-gocache \
 go run ./cmd/domain-finder \
+  -backend file \
   -interactive \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
@@ -190,6 +222,20 @@ Typical operator feedback during generation:
 - `generation: batch 1 attempt 1 accepted 2, invalid 1, duplicates 0, need 1 more`
 - `generation: retrying batch 1 attempt 2 (1/2) after transient error`
 - `generation: complete, accepted 6 stems`
+
+PostgreSQL backend example:
+
+```sh
+export PG_DSN='postgres://user:pass@localhost:5432/domainminer'
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -backend postgres \
+  -no-interactive \
+  -zone com \
+  -zone net \
+  -candidate example \
+  -candidate missing
+```
 
 This still reports only exact presence or absence in loaded zone files. It is
 not a registrar availability check. OpenAI generation produces candidate stems

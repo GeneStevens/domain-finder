@@ -12,6 +12,7 @@ available domains.
 - `internal/app`: argument parsing and top-level lookup orchestration
 - `internal/zonefile`: zone opening, gzip detection, streaming reader, parser
 - `internal/index`: single-zone exact-match index, multi-zone lookup, loader
+- `internal/backend`: backend-neutral lookup interface plus file and PostgreSQL backends
 - `internal/candidates`: stem loading, normalization, merge, and dedupe
 - `internal/config`: YAML config loading and precedence resolution
 - `internal/match`: stable stem result model and per-zone classification
@@ -31,6 +32,16 @@ available domains.
   - candidate `example`
   - zones `com`, `net`
   - lookups `example.com`, `example.net`
+
+## Backends
+
+- File backend:
+  - expects `-zone zone=path`
+  - composes `<stem>.<zone>` internally for exact file-backed checks
+- PostgreSQL backend:
+  - expects plain `-zone zone-name`
+  - checks `dm.zone_records` with exact `zone_file` + `name`
+- `internal/match` now depends on the backend-neutral lookup interface.
 
 ## Candidates layer
 
@@ -72,6 +83,10 @@ available domains.
   - prefer `OPENAI_API_KEY`
   - allow `domain-finder.local.yaml` fallback for local-only use
   - do not put API keys in `domain-finder.yaml`
+- PostgreSQL config:
+  - `postgres.dsn` in YAML
+  - `PG_DSN` in environment
+  - `-pg-dsn` as the CLI override
 - Generation model:
   - `-generate` enables OpenAI stem generation
   - generation happens in batches
@@ -106,6 +121,9 @@ available domains.
 ## Current CLI capabilities
 
 - Repeated `-zone name=path` flags load explicitly named zones.
+- `-backend file|postgres` selects the lookup backend.
+- File backend expects `-zone zone=path`.
+- Postgres backend expects `-zone zone-name`.
 - Repeated `-candidate stem` flags add explicit stems.
 - `-candidate-file <path>` loads stems from a text file.
 - `-candidate-stdin` loads stems from stdin.

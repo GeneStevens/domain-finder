@@ -5,11 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/genestevens/domain-finder/internal/backend"
 	"github.com/genestevens/domain-finder/internal/config"
 	"github.com/genestevens/domain-finder/internal/match"
 	"github.com/genestevens/domain-finder/internal/openai"
@@ -28,6 +31,19 @@ type fakeStemGenerator struct {
 type fakeStemResponse struct {
 	stems []string
 	err   error
+}
+
+type fakeLookup struct {
+	zones   []string
+	present map[string]bool
+}
+
+func (f fakeLookup) ZoneNames() []string {
+	return append([]string(nil), f.zones...)
+}
+
+func (f fakeLookup) Contains(_ context.Context, zone, stem string) (bool, error) {
+	return f.present[zone+"/"+stem], nil
 }
 
 func (f *fakeStemGenerator) GenerateBatch(_ context.Context, _ string, count int) ([]string, error) {
@@ -73,6 +89,93 @@ func TestRunTextWorkflowFallsBackWhenNotInteractive(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty fallback mode", stderr.String())
+	}
+}
+
+func TestRunPostgresBackendWorkflow(t *testing.T) {
+	originalOpenPostgresBackend := openPostgresBackend
+	defer func() {
+		openPostgresBackend = originalOpenPostgresBackend
+	}()
+
+	var gotDSN string
+	var gotZones []string
+	openPostgresBackend = func(dsn string, zones []string) (backend.Lookup, io.Closer, error) {
+		gotDSN = dsn
+		gotZones = append([]string(nil), zones...)
+		return fakeLookup{
+			zones: zones,
+			present: map[string]bool{
+				"com/example": true,
+				"net/example": true,
+			},
+		}, nil, nil
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("postgres:\n  dsn: postgres://yaml\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	originalGetWorkingDir := getWorkingDir
+	defer func() { getWorkingDir = originalGetWorkingDir }()
+	getWorkingDir = func() (string, error) { return dir, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-backend", "postgres",
+		"-no-interactive",
+		"-zone", "net",
+		"-zone", "com",
+		"-candidate", "example",
+		"-candidate", "missing",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if gotDSN != "postgres://yaml" {
+		t.Fatalf("openPostgresBackend dsn = %q, want postgres://yaml", gotDSN)
+	}
+	if !reflect.DeepEqual(gotZones, []string{"com", "net"}) {
+		t.Fatalf("openPostgresBackend zones = %#v, want [com net]", gotZones)
+	}
+	if !strings.Contains(stdout.String(), "example\n") || !strings.Contains(stdout.String(), "missing\n") {
+		t.Fatalf("stdout = %q, want normal deterministic result output", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty fallback mode", stderr.String())
+	}
+}
+
+func TestRunBackendSelectionValidation(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run([]string{
+		"-backend", "postgres",
+		"-zone", "com=testdata/small/com.zone",
+		"-candidate", "example",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "postgres backend requires -zone zone-name") {
+		t.Fatalf("Run() error = %v, want postgres zone validation", err)
+	}
+
+	err = Run([]string{
+		"-backend", "file",
+		"-zone", "com",
+		"-candidate", "example",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "file backend requires -zone zone=path") {
+		t.Fatalf("Run() error = %v, want file zone validation", err)
+	}
+
+	err = Run([]string{
+		"-backend", "postgres",
+		"-zone", "com",
+		"-candidate", "example",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "postgres backend requires a DSN") {
+		t.Fatalf("Run() error = %v, want postgres DSN validation", err)
 	}
 }
 

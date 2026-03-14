@@ -8,7 +8,7 @@ import (
 
 func TestLoadPrecedence(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, baseConfigName), []byte("openai:\n  model: base-model\ngenerate:\n  count: 5\n  batch_size: 2\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, baseConfigName), []byte("openai:\n  model: base-model\npostgres:\n  dsn: postgres://base\ngenerate:\n  count: 5\n  batch_size: 2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, localConfigName), []byte("openai:\n  api_key: local-key\n  model: local-model\ngenerate:\n  count: 7\n  max_attempts: 4\n  retry_count: 1\n"), 0o644); err != nil {
@@ -28,6 +28,7 @@ func TestLoadPrecedence(t *testing.T) {
 		OpenAIModel:       "cli-model",
 		GenerateCount:     9,
 		GenerateBatchSize: 6,
+		PostgresDSN:       "postgres://cli",
 	})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
@@ -50,6 +51,9 @@ func TestLoadPrecedence(t *testing.T) {
 	}
 	if cfg.Generate.RetryCount != 5 {
 		t.Fatalf("Generate.RetryCount = %d, want 5", cfg.Generate.RetryCount)
+	}
+	if cfg.Postgres.DSN != "postgres://cli" {
+		t.Fatalf("Postgres.DSN = %q, want %q", cfg.Postgres.DSN, "postgres://cli")
 	}
 }
 

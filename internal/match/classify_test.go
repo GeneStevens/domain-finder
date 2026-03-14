@@ -1,27 +1,44 @@
 package match
 
 import (
+	"context"
+	"fmt"
 	"reflect"
 	"testing"
-
-	"github.com/genestevens/domain-finder/internal/index"
 )
 
+type fakeLookup struct {
+	zones   []string
+	present map[string]bool
+}
+
+func (f fakeLookup) ZoneNames() []string {
+	return append([]string(nil), f.zones...)
+}
+
+func (f fakeLookup) Contains(_ context.Context, zone, stem string) (bool, error) {
+	return f.present[zone+"/"+stem], nil
+}
+
+type errLookup struct{}
+
+func (errLookup) ZoneNames() []string { return []string{"com"} }
+func (errLookup) Contains(_ context.Context, zone, stem string) (bool, error) {
+	return false, fmt.Errorf("boom for %s/%s", zone, stem)
+}
+
 func TestClassifyAcrossMultipleZones(t *testing.T) {
-	multi := index.NewMulti()
-	com := index.NewExact("com")
-	com.Add("example.com")
-	net := index.NewExact("net")
-	net.Add("example.net")
-
-	if err := multi.Register(net); err != nil {
-		t.Fatalf("Register(net) error = %v", err)
-	}
-	if err := multi.Register(com); err != nil {
-		t.Fatalf("Register(com) error = %v", err)
+	got, err := Classify(context.Background(), fakeLookup{
+		zones: []string{"com", "net"},
+		present: map[string]bool{
+			"com/example": true,
+			"net/example": true,
+		},
+	}, "example")
+	if err != nil {
+		t.Fatalf("Classify() error = %v", err)
 	}
 
-	got := Classify(multi, "example")
 	want := CandidateResult{
 		Candidate: "example",
 		Zones: []ZonePresence{
@@ -38,13 +55,13 @@ func TestClassifyAcrossMultipleZones(t *testing.T) {
 }
 
 func TestClassifyAbsentInAll(t *testing.T) {
-	multi := index.NewMulti()
-	org := index.NewExact("org")
-	if err := multi.Register(org); err != nil {
-		t.Fatalf("Register(org) error = %v", err)
+	got, err := Classify(context.Background(), fakeLookup{
+		zones:   []string{"org"},
+		present: map[string]bool{},
+	}, "missing")
+	if err != nil {
+		t.Fatalf("Classify() error = %v", err)
 	}
-
-	got := Classify(multi, "missing")
 	if got.PresentInAny {
 		t.Fatal("PresentInAny = true, want false")
 	}
@@ -54,23 +71,16 @@ func TestClassifyAbsentInAll(t *testing.T) {
 }
 
 func TestClassifyAllPreservesCandidateOrderAndZoneOrder(t *testing.T) {
-	multi := index.NewMulti()
-	zones := []struct {
-		name   string
-		domain string
-	}{
-		{name: "net", domain: "example.net"},
-		{name: "com", domain: "example.com"},
+	got, err := ClassifyAll(context.Background(), fakeLookup{
+		zones: []string{"com", "net"},
+		present: map[string]bool{
+			"com/example": true,
+			"net/example": true,
+		},
+	}, []string{"example", "missing"})
+	if err != nil {
+		t.Fatalf("ClassifyAll() error = %v", err)
 	}
-	for _, zone := range zones {
-		idx := index.NewExact(zone.name)
-		idx.Add(zone.domain)
-		if err := multi.Register(idx); err != nil {
-			t.Fatalf("Register(%s) error = %v", zone.name, err)
-		}
-	}
-
-	got := ClassifyAll(multi, []string{"example", "missing"})
 	if len(got) != 2 {
 		t.Fatalf("len(ClassifyAll()) = %d, want 2", len(got))
 	}
@@ -86,8 +96,8 @@ func TestClassifyAllPreservesCandidateOrderAndZoneOrder(t *testing.T) {
 	}
 }
 
-func TestComposeLookupName(t *testing.T) {
-	if got := ComposeLookupName("example", "net"); got != "example.net" {
-		t.Fatalf("ComposeLookupName() = %q, want %q", got, "example.net")
+func TestClassifyPropagatesLookupError(t *testing.T) {
+	if _, err := Classify(context.Background(), errLookup{}, "example"); err == nil {
+		t.Fatal("Classify() error = nil, want lookup error")
 	}
 }

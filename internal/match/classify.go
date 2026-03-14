@@ -1,24 +1,22 @@
 package match
 
 import (
-	"fmt"
+	"context"
 
-	"github.com/genestevens/domain-finder/internal/index"
+	"github.com/genestevens/domain-finder/internal/backend"
 )
 
-// ComposeLookupName builds the FQDN checked for a candidate stem in one zone.
-func ComposeLookupName(candidate, zone string) string {
-	return fmt.Sprintf("%s.%s", candidate, zone)
-}
-
 // Classify returns a stable result for one candidate stem across all loaded zones.
-func Classify(multi *index.Multi, candidate string) CandidateResult {
-	zoneNames := multi.ZoneNames()
+func Classify(ctx context.Context, lookup backend.Lookup, candidate string) (CandidateResult, error) {
+	zoneNames := lookup.ZoneNames()
 	zones := make([]ZonePresence, 0, len(zoneNames))
 	presentInAny := false
 
 	for _, zoneName := range zoneNames {
-		present := multi.Contains(zoneName, ComposeLookupName(candidate, zoneName))
+		present, err := lookup.Contains(ctx, zoneName, candidate)
+		if err != nil {
+			return CandidateResult{}, err
+		}
 		zones = append(zones, ZonePresence{
 			Zone:    zoneName,
 			Present: present,
@@ -33,14 +31,18 @@ func Classify(multi *index.Multi, candidate string) CandidateResult {
 		Zones:        zones,
 		PresentInAny: presentInAny,
 		AbsentInAll:  !presentInAny,
-	}
+	}, nil
 }
 
 // ClassifyAll returns stable results for all candidates in the given order.
-func ClassifyAll(multi *index.Multi, candidates []string) []CandidateResult {
+func ClassifyAll(ctx context.Context, lookup backend.Lookup, candidates []string) ([]CandidateResult, error) {
 	results := make([]CandidateResult, 0, len(candidates))
 	for _, candidate := range candidates {
-		results = append(results, Classify(multi, candidate))
+		result, err := Classify(ctx, lookup, candidate)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, result)
 	}
-	return results
+	return results, nil
 }
