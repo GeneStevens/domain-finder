@@ -604,6 +604,153 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 	}
 }
 
+func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	configBody := "" +
+		"openai:\n" +
+		"  model: yaml-model\n" +
+		"generate:\n" +
+		"  count: 4\n" +
+		"  batch_size: 2\n" +
+		"  max_attempts: 3\n" +
+		"  retry_count: 1\n" +
+		"  max_length: 10\n" +
+		"  max_syllables: 2\n" +
+		"  prefix: neo\n" +
+		"  suffix: ix\n" +
+		"  style: security product\n"
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) {
+		t.Fatal("newStemGenerator should not be called during dry run")
+		return nil, nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-generate", "short product stems",
+		"-generate-dry-run",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty dry-run stderr", stderr.String())
+	}
+
+	out := stdout.String()
+	wantFragments := []string{
+		"generation dry run",
+		"model: yaml-model",
+		"generate_count: 4",
+		"batch_size: 2",
+		"max_attempts: 3",
+		"retry_count: 1",
+		"theme: short product stems",
+		"style: security product",
+		"max_length: 10",
+		"max_syllables: 2",
+		"prefix: neo",
+		"suffix: ix",
+		"system prompt",
+		"user prompt",
+	}
+	for _, fragment := range wantFragments {
+		if !strings.Contains(out, fragment) {
+			t.Fatalf("dry run output missing %q:\n%s", fragment, out)
+		}
+	}
+}
+
+func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
+	dir := t.TempDir()
+	configBody := "" +
+		"openai:\n" +
+		"  model: yaml-model\n" +
+		"generate:\n" +
+		"  count: 4\n" +
+		"  batch_size: 2\n" +
+		"  max_length: 9\n" +
+		"  max_syllables: 2\n" +
+		"  prefix: neo\n" +
+		"  suffix: ix\n" +
+		"  style: security product\n"
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) {
+		t.Fatal("newStemGenerator should not be called during dry run")
+		return nil, nil
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-generate", "short product stems",
+		"-generate-dry-run",
+		"-generate-model", "cli-model",
+		"-generate-count", "8",
+		"-generate-batch-size", "4",
+		"-generate-max-length", "12",
+		"-generate-max-syllables", "3",
+		"-generate-prefix", "dev",
+		"-generate-suffix", "io",
+		"-generate-style", "developer tool",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	out := stdout.String()
+	wantFragments := []string{
+		"model: cli-model",
+		"generate_count: 8",
+		"batch_size: 4",
+		"max_length: 12",
+		"max_syllables: 3",
+		"prefix: dev",
+		"suffix: io",
+		"style: developer tool",
+		"start with `dev`",
+		"end with `io`",
+	}
+	for _, fragment := range wantFragments {
+		if !strings.Contains(out, fragment) {
+			t.Fatalf("dry run output missing %q:\n%s", fragment, out)
+		}
+	}
+}
+
+func TestRunGenerateDryRunRequiresPrompt(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run([]string{
+		"-generate-dry-run",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "-generate-dry-run requires -generate") {
+		t.Fatalf("Run() error = %v, want dry-run prompt validation", err)
+	}
+}
+
 func TestRunJSONLWorkflowWithGeneratedStems(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 1\n"), 0o644); err != nil {

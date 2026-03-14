@@ -50,6 +50,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	candidateFile := fs.String("candidate-file", "", "read candidates from a text file")
 	candidateStdin := fs.Bool("candidate-stdin", false, "read candidates from stdin")
 	generatePrompt := fs.String("generate", "", "generate candidate stems from this prompt")
+	generateDryRun := fs.Bool("generate-dry-run", false, "print the resolved generation contract and exit without calling OpenAI")
 	generateStyle := fs.String("generate-style", "", "style guidance for generation, such as invented SaaS or developer tool")
 	generateCount := fs.Int("generate-count", 0, "total number of stems to generate")
 	generateBatchSize := fs.Int("generate-batch-size", 0, "number of stems requested per generation batch")
@@ -74,11 +75,16 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if len(zones) == 0 {
+	trimmedGeneratePrompt := strings.TrimSpace(*generatePrompt)
+	if *generateDryRun && trimmedGeneratePrompt == "" {
+		fs.Usage()
+		return fmt.Errorf("-generate-dry-run requires -generate")
+	}
+	if len(zones) == 0 && !*generateDryRun {
 		fs.Usage()
 		return fmt.Errorf("at least one -zone flag is required")
 	}
-	if len(cliCandidates) == 0 && *candidateFile == "" && !*candidateStdin && strings.TrimSpace(*generatePrompt) == "" {
+	if len(cliCandidates) == 0 && *candidateFile == "" && !*candidateStdin && trimmedGeneratePrompt == "" {
 		fs.Usage()
 		return fmt.Errorf("provide at least one -candidate, -candidate-file, -candidate-stdin, or -generate")
 	}
@@ -118,8 +124,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	var generator openai.StemGenerator
 	var lookup backend.Lookup
 	var lookupCloser io.Closer
-	trimmedGeneratePrompt := strings.TrimSpace(*generatePrompt)
-	if trimmedGeneratePrompt != "" || *backendName == "postgres" {
+	if trimmedGeneratePrompt != "" || *backendName == "postgres" || *generateDryRun {
 		workingDir, err := getWorkingDir()
 		if err != nil {
 			return fmt.Errorf("determine working directory: %w", err)
@@ -138,6 +143,11 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
+	}
+	if *generateDryRun {
+		contract := openai.PromptBuilder{}.BuildContract(cfg, trimmedGeneratePrompt)
+		_, err := fmt.Fprint(writer, openai.RenderContract(contract))
+		return err
 	}
 	if trimmedGeneratePrompt != "" {
 		generator, err = newStemGenerator(cfg)

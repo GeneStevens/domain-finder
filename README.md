@@ -105,6 +105,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-max-syllables` prefers shorter, simpler-sounding stems
 - `-generate-prefix` prefers stems that start with specific text
 - `-generate-suffix` prefers stems that end with specific text
+- `-generate-dry-run` prints the fully resolved generation contract and exits before any OpenAI call
 - `generate.max_attempts` bounds how many attempts each batch gets to satisfy its target
 - `generate.retry_count` bounds transient API retries inside one attempt
 - Generated values are treated as stems, not FQDNs
@@ -118,6 +119,14 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `internal/openai` now owns a dedicated prompt builder for the generation contract
 - Generated values still pass through the normal stem validation and dedupe pipeline
 - Invalid outputs such as FQDNs, spaces, punctuation, duplicates, or empty strings are still rejected after generation
+- `-generate-dry-run` uses the same resolved config and prompt builder, but does not require an API key and does not touch the network
+
+## Generation dry run
+
+- `-generate-dry-run` is an inspection mode for prompt tuning
+- It prints the resolved model, generation counts, retry policy, theme, style, structural constraints, and the final prompt-builder output
+- It exits before backend loading, OpenAI client creation, or any network call
+- It is intended for prompt-contract inspection, not candidate lookup
 
 ## Hardened generation behavior
 
@@ -261,6 +270,20 @@ go run ./cmd/domain-finder \
   -generate-style "developer tool" \
   -generate-count 8 \
   -generate-batch-size 4 \
+  -generate-max-length 12 \
+  -generate-max-syllables 3 \
+  -generate-prefix dev \
+  -generate-suffix io
+```
+
+Dry-run prompt inspection without spending API calls:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -generate "short product name stems" \
+  -generate-dry-run \
+  -generate-style "developer tool" \
   -generate-max-length 12 \
   -generate-max-syllables 3 \
   -generate-prefix dev \

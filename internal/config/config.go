@@ -232,20 +232,21 @@ func applyFileConfig(cfg *Config, fc fileConfig) {
 }
 
 func loadFile(path string) (fileConfig, error) {
+	empty := fileConfig{
+		GenerateMaxAttempts: -1,
+		GenerateRetryCount:  -1,
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fileConfig{}, nil
+			return empty, nil
 		}
 		return fileConfig{}, fmt.Errorf("open config %q: %w", path, err)
 	}
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	cfg := fileConfig{
-		GenerateMaxAttempts: -1,
-		GenerateRetryCount:  -1,
-	}
+	cfg := empty
 	section := ""
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())

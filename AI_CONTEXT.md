@@ -89,6 +89,7 @@ available domains.
   - `-pg-dsn` as the CLI override
 - Generation model:
   - `-generate` enables OpenAI stem generation
+  - `-generate-dry-run` inspects the resolved generation contract without creating a client or calling the network
   - generation happens in batches
   - each batch is normalized, deduped, and processed before the next batch
   - `internal/openai` owns a dedicated prompt builder for the generation contract
@@ -98,6 +99,7 @@ available domains.
   - transient API failures have bounded retries inside one attempt
   - degraded model output is rejected without contaminating the candidate set
   - prompt guidance is not validation; generated stems still pass through the normal candidate validation gate
+  - dry-run uses the same config-resolution and prompt-builder path as a real run
 
 ## Result model
 
@@ -132,6 +134,7 @@ available domains.
 - `-candidate-file <path>` loads stems from a text file.
 - `-candidate-stdin` loads stems from stdin.
 - `-generate <prompt>` requests OpenAI-generated stems.
+- `-generate-dry-run` prints the resolved prompt contract and exits without an API call.
 - `-generate-count`, `-generate-batch-size`, and `-generate-model` override generation config.
 - `-generate-style`, `-generate-max-length`, `-generate-max-syllables`, `-generate-prefix`, and `-generate-suffix` steer prompt construction.
 - `generate.max_attempts` and `generate.retry_count` harden generation behavior from YAML/env config.
