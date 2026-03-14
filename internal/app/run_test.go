@@ -216,9 +216,6 @@ func TestRunTextWorkflowInteractiveOverride(t *testing.T) {
 		"result",
 		"checking: example... [1/2]",
 		"checking: missing... [2/2]",
-		"example",
-		"(none)",
-		"taken",
 		"missing",
 		"COM NET",
 		"all ✓",
@@ -228,6 +225,9 @@ func TestRunTextWorkflowInteractiveOverride(t *testing.T) {
 		if !strings.Contains(progress, fragment) {
 			t.Fatalf("stderr missing %q:\n%s", fragment, progress)
 		}
+	}
+	if strings.Contains(progress, "\nexample") || strings.Contains(progress, "\ntaken") {
+		t.Fatalf("stderr = %q, want default interactive mode to keep only strong durable rows", progress)
 	}
 }
 
@@ -264,6 +264,34 @@ func TestRunTextWorkflowInteractiveCanHideTakenRows(t *testing.T) {
 		"Done: checked 2 | emitted 2 | strong 1\n",
 	}
 	for _, fragment := range wantFragments {
+		if !strings.Contains(progress, fragment) {
+			t.Fatalf("stderr missing %q:\n%s", fragment, progress)
+		}
+	}
+}
+
+func TestRunTextWorkflowInteractiveCanShowPartials(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run([]string{
+		"-interactive",
+		"-interactive-show-partials",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-candidate", "example",
+		"-candidate", "missing",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	progress := stderr.String()
+	for _, fragment := range []string{
+		"missing",
+		"COM NET",
+		"all ✓",
+	} {
 		if !strings.Contains(progress, fragment) {
 			t.Fatalf("stderr missing %q:\n%s", fragment, progress)
 		}
@@ -834,11 +862,6 @@ func TestRunTextWorkflowInteractiveWithGeneratedStems(t *testing.T) {
 	progress := stderr.String()
 	wantProgress := []string{
 		"Searching 4 stems | filter: absent-in-all\n",
-		"generation: batch 1 attempt 1 requesting 2 stems",
-		"generation: batch 1 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more",
-		"generation: batch 2 attempt 1 requesting 1 stems",
-		"generation: batch 2 attempt 1 accepted 1, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more",
-		"generation: complete, accepted 3 stems",
 		"checking: missing... [1/4]",
 		"checking: brandfoo... [2/4]",
 		"checking: example... [3/4]",
@@ -851,6 +874,17 @@ func TestRunTextWorkflowInteractiveWithGeneratedStems(t *testing.T) {
 	for _, fragment := range wantProgress {
 		if !strings.Contains(progress, fragment) {
 			t.Fatalf("stderr missing %q:\n%s", fragment, progress)
+		}
+	}
+	for _, fragment := range []string{
+		"\ngeneration: batch 1 attempt 1 requesting 2 stems",
+		"\ngeneration: batch 1 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more",
+		"\ngeneration: batch 2 attempt 1 requesting 1 stems",
+		"\ngeneration: batch 2 attempt 1 accepted 1, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more",
+		"\ngeneration: complete, accepted 3 stems",
+	} {
+		if strings.Contains(progress, fragment) {
+			t.Fatalf("stderr = %q, want low-value generation chatter to stay ephemeral", progress)
 		}
 	}
 }

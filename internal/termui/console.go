@@ -12,18 +12,21 @@ import (
 
 // Console renders a lightweight streaming interactive console on stderr.
 type Console struct {
-	w           io.Writer
-	zones       []string
-	color       bool
-	hideTaken   bool
-	candWidth   int
-	zoneWidth   int
-	statusWidth int
-	lastLen     int
+	w            io.Writer
+	zones        []string
+	color        bool
+	hideTaken    bool
+	showPartials bool
+	candWidth    int
+	zoneWidth    int
+	statusWidth  int
+	lastLen      int
+	liveStatus   string
+	liveActive   string
 }
 
 // NewConsole creates a new streaming console.
-func NewConsole(w io.Writer, zones []string, candidates []string, color, hideTaken bool) *Console {
+func NewConsole(w io.Writer, zones []string, candidates []string, color, hideTaken, showPartials bool) *Console {
 	width := len("stem")
 	for _, candidate := range candidates {
 		if len(candidate) > width {
@@ -44,13 +47,14 @@ func NewConsole(w io.Writer, zones []string, candidates []string, color, hideTak
 		}
 	}
 	return &Console{
-		w:           w,
-		zones:       zones,
-		color:       color,
-		hideTaken:   hideTaken,
-		candWidth:   width,
-		zoneWidth:   zoneWidth,
-		statusWidth: statusWidth,
+		w:            w,
+		zones:        zones,
+		color:        color,
+		hideTaken:    hideTaken,
+		showPartials: showPartials,
+		candWidth:    width,
+		zoneWidth:    zoneWidth,
+		statusWidth:  statusWidth,
 	}
 }
 
@@ -114,8 +118,17 @@ func (c *Console) UpdateActive(index, total int, candidate string) error {
 	if c == nil || c.w == nil {
 		return nil
 	}
-	line := fmt.Sprintf("checking: %s... [%d/%d]", truncate(candidate, c.candWidth+4), index, total)
-	return c.rewrite(line)
+	c.liveActive = fmt.Sprintf("checking: %s... [%d/%d]", truncate(candidate, c.candWidth+4), index, total)
+	return c.rewriteLive()
+}
+
+// UpdateStatus rewrites the transient generation/search status line in place.
+func (c *Console) UpdateStatus(line string) error {
+	if c == nil || c.w == nil {
+		return nil
+	}
+	c.liveStatus = strings.TrimSpace(line)
+	return c.rewriteLive()
 }
 
 // EmitRow writes a durable emitted row to the console.
@@ -139,10 +152,16 @@ func (c *Console) ShouldEmitRow(result match.CandidateResult) bool {
 	if c == nil {
 		return true
 	}
-	if !c.hideTaken {
+	if result.AbsentInAll {
 		return true
 	}
-	return c.availableZonesText(result) != "(none)"
+	if c.showPartials && c.availableZonesText(result) != "(none)" {
+		return true
+	}
+	if c.hideTaken {
+		return false
+	}
+	return false
 }
 
 // ClearActive clears the transient active line.
@@ -180,6 +199,14 @@ func (c *Console) Note(line string) error {
 	}
 	_, err := fmt.Fprintln(c.w, line)
 	return err
+}
+
+func (c *Console) rewriteLive() error {
+	line := strings.TrimSpace(strings.Join(nonEmpty([]string{c.liveStatus, c.liveActive}), " | "))
+	if line == "" {
+		return c.ClearActive()
+	}
+	return c.rewrite(line)
 }
 
 func (c *Console) rewrite(line string) error {
@@ -250,4 +277,14 @@ func (c *Console) styleStrong(value string) string {
 		return value
 	}
 	return "\x1b[1;97;42m" + value + "\x1b[0m"
+}
+
+func nonEmpty(parts []string) []string {
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(part) != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }

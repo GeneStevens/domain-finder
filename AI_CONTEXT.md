@@ -148,15 +148,17 @@ available domains.
 - `internal/termui` owns the compact streaming interactive table on `stderr`.
 - Interactive console prints:
   - a small startup header
-  - a reusable `checking:` stem line
-  - one-line durable emitted stem rows
+  - one reusable live line that combines current progress and current `checking:` state
+  - one-line durable emitted stem rows only for meaningful discoveries
   - an `available_zones` column that explicitly lists which requested zones are available
   - a compact `result` column:
     - `all ✓` for strongest all-zone hits
     - `partial` for mixed availability
   - `taken` when no requested zones are available
+  - low-value generation status stays ephemeral rather than leaving durable lines behind
   - optional ANSI emphasis for strongest all-zone hits
   - optional taken-row suppression for the interactive tape only
+  - optional partial-row retention via `-interactive-show-partials`
   - a compact final completion line
 - Interactive mode keeps the compact human-facing table on `stderr`; deterministic detailed output is preserved for non-interactive mode and `-out` files.
 - Audit logging is separate from both interactive and deterministic output paths, and records all checked stems whether or not they were visibly shown.

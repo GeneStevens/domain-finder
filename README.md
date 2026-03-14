@@ -321,6 +321,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-interactive` forces the interactive console on
 - `-no-interactive` forces the deterministic fallback report path
 - `-interactive-hide-taken` suppresses durable `taken` rows in the interactive compact table only
+- `-interactive-show-partials` keeps partial available-zone hits as durable rows in interactive mode
 - `-color` forces ANSI styling in interactive mode
 - `-no-color` disables ANSI styling in interactive mode
 - `jsonl` mode never uses the interactive console
@@ -328,8 +329,13 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 ## Interactive console behavior
 
 - Prints a small startup header showing loaded zones, candidate count, and filter
-- Shows one reusable ephemeral `checking: ...` line while checking
-- Prints exactly one durable line per emitted stem
+- Shows one reusable ephemeral live line while checking and generating
+- Uses that single live line for low-value batch chatter such as:
+  - batch requests
+  - accepted 0
+  - duplicate-only or no-progress refill attempts
+  - adaptive refill/effective batch-size updates
+- Prints durable rows only for meaningful candidate discoveries
 - Uses a compact table layout tuned for scanability
 - Header columns are:
   - `stem`: the stem being evaluated
@@ -339,9 +345,17 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - `all ✓` means all requested zones are available for that stem
   - `partial` means only some requested zones are available
   - `taken` means none of the requested zones are available
+- By default, interactive mode keeps durable output focused on strongest all-zone hits
+- `-interactive-show-partials` adds partial hits back as durable rows
 - Strongest all-zone hits stay visually strongest with the success marker and optional ANSI styling
 - `-interactive-hide-taken` only suppresses durable `taken` rows on the interactive tape
 - It does not change matching, filtering, non-interactive text output, or JSONL output
+- End-of-run summaries remain durable:
+  - generation diagnostics
+  - generation usage
+  - generation underfill
+  - generation stop
+  - final checked/emitted/strong line
 - Clears the active line cleanly on completion and prints a compact final status
 
 ## stdout / stderr / file behavior
@@ -420,6 +434,20 @@ go run ./cmd/domain-finder \
   -backend file \
   -interactive \
   -interactive-hide-taken \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -candidate example \
+  -candidate missing
+```
+
+Interactive console with partials kept durably:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -backend file \
+  -interactive \
+  -interactive-show-partials \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
   -candidate example \

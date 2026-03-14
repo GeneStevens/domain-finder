@@ -12,7 +12,7 @@ import (
 
 func TestConsoleRendersHeaderAndRows(t *testing.T) {
 	var buf bytes.Buffer
-	console := NewConsole(&buf, []string{"com", "net"}, []string{"example", "missing"}, false, false)
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"example", "missing"}, false, false, true)
 
 	if err := console.Start(2, report.FilterAbsentInAll); err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -54,9 +54,9 @@ func TestConsoleRendersHeaderAndRows(t *testing.T) {
 	}
 }
 
-func TestConsoleFormatsPartialAndTakenRowsClearly(t *testing.T) {
+func TestConsoleFormatsPartialRowsClearlyAndSuppressesTakenRows(t *testing.T) {
 	var buf bytes.Buffer
-	console := NewConsole(&buf, []string{"com", "net"}, []string{"partialstem", "takenstem"}, false, false)
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"partialstem", "takenstem"}, false, false, true)
 
 	if err := console.EmitRow(match.CandidateResult{
 		Candidate:    "partialstem",
@@ -83,14 +83,14 @@ func TestConsoleFormatsPartialAndTakenRowsClearly(t *testing.T) {
 	if !strings.Contains(got, "partialstem") || !strings.Contains(got, "COM") || !strings.Contains(got, "partial") {
 		t.Fatalf("partial row = %q, want clear available-zone semantics", got)
 	}
-	if !strings.Contains(got, "takenstem") || !strings.Contains(got, "(none)") || !strings.Contains(got, "taken") {
-		t.Fatalf("taken row = %q, want explicit no-availability semantics", got)
+	if strings.Contains(got, "takenstem") || strings.Contains(got, "(none)") || strings.Contains(got, "taken") {
+		t.Fatalf("taken row = %q, want taken rows suppressed from durable interactive output", got)
 	}
 }
 
 func TestConsoleAdaptsColumnWidths(t *testing.T) {
 	var buf bytes.Buffer
-	console := NewConsole(&buf, []string{"com", "network", "org"}, []string{"verylongstemname"}, false, false)
+	console := NewConsole(&buf, []string{"com", "network", "org"}, []string{"verylongstemname"}, false, false, true)
 
 	if console.candWidth < len("verylongstemname") {
 		t.Fatalf("candWidth = %d, want width for longest stem", console.candWidth)
@@ -131,7 +131,7 @@ func TestShouldUseColor(t *testing.T) {
 
 func TestConsoleStylesStrongHitsWhenEnabled(t *testing.T) {
 	var buf bytes.Buffer
-	console := NewConsole(&buf, []string{"com", "net"}, []string{"missing"}, true, false)
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"missing"}, true, false, false)
 
 	if err := console.EmitRow(match.CandidateResult{
 		Candidate:   "missing",
@@ -152,7 +152,7 @@ func TestConsoleStylesStrongHitsWhenEnabled(t *testing.T) {
 
 func TestConsoleCanSuppressTakenRows(t *testing.T) {
 	var buf bytes.Buffer
-	console := NewConsole(&buf, []string{"com", "net"}, []string{"takenstem", "partialstem", "strongstem"}, false, true)
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"takenstem", "partialstem", "strongstem"}, false, true, true)
 
 	taken := match.CandidateResult{
 		Candidate:    "takenstem",
@@ -208,5 +208,60 @@ func TestConsoleCanSuppressTakenRows(t *testing.T) {
 	}
 	if !strings.Contains(got, "strongstem") || !strings.Contains(got, "all ✓") {
 		t.Fatalf("console output = %q, want strong row preserved", got)
+	}
+}
+
+func TestConsoleDefaultsToStrongHitsOnly(t *testing.T) {
+	var buf bytes.Buffer
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"partialstem", "strongstem"}, false, false, false)
+
+	partial := match.CandidateResult{
+		Candidate:    "partialstem",
+		PresentInAny: true,
+		Zones: []match.ZonePresence{
+			{Zone: "com", Present: false},
+			{Zone: "net", Present: true},
+		},
+	}
+	strong := match.CandidateResult{
+		Candidate:   "strongstem",
+		AbsentInAll: true,
+		Zones: []match.ZonePresence{
+			{Zone: "com", Present: false},
+			{Zone: "net", Present: false},
+		},
+	}
+
+	if console.ShouldEmitRow(partial) {
+		t.Fatal("ShouldEmitRow(partial) = true, want false by default")
+	}
+	if !console.ShouldEmitRow(strong) {
+		t.Fatal("ShouldEmitRow(strong) = false, want true")
+	}
+}
+
+func TestConsoleUpdateStatusUsesEphemeralLine(t *testing.T) {
+	var buf bytes.Buffer
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"missing"}, false, false, false)
+
+	if err := console.UpdateStatus("generation: batch 1 attempt 1 requesting 2 stems"); err != nil {
+		t.Fatalf("UpdateStatus() error = %v", err)
+	}
+	if err := console.UpdateActive(1, 1, "missing"); err != nil {
+		t.Fatalf("UpdateActive() error = %v", err)
+	}
+	if err := console.Note("generation diagnostics"); err != nil {
+		t.Fatalf("Note() error = %v", err)
+	}
+
+	got := buf.String()
+	if !strings.Contains(got, "\r") {
+		t.Fatalf("console output = %q, want carriage-return based ephemeral updates", got)
+	}
+	if !strings.Contains(got, "generation diagnostics\n") {
+		t.Fatalf("console output = %q, want durable summary note", got)
+	}
+	if strings.Contains(got, "\ngeneration: batch 1 attempt 1 requesting 2 stems") {
+		t.Fatalf("console output = %q, want status line to stay ephemeral instead of becoming a durable note", got)
 	}
 }

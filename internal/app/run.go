@@ -77,6 +77,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	forceInteractive := fs.Bool("interactive", false, "force interactive text console")
 	noInteractive := fs.Bool("no-interactive", false, "disable interactive text console")
 	hideInteractiveTaken := fs.Bool("interactive-hide-taken", false, "suppress durable 'taken' rows in the interactive compact table")
+	showInteractivePartials := fs.Bool("interactive-show-partials", false, "keep partial available-zone hits as durable rows in interactive mode")
 	forceColor := fs.Bool("color", false, "force ANSI color/styling in interactive mode")
 	noColor := fs.Bool("no-color", false, "disable ANSI color/styling in interactive mode")
 	fs.Var(&zones, "zone", "zone input: file backend uses zone=path, postgres backend uses zone name (repeatable)")
@@ -246,7 +247,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 				interactiveWriter = writer
 			}
 			useColor := termui.ShouldUseColor(*forceColor, *noColor, stderr, stderrIsTTY)
-			outcome, err = runInteractiveTextMode(context.Background(), *backendName, lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, interactiveWriter, stderr, useColor, *hideInteractiveTaken, auditLogger)
+			outcome, err = runInteractiveTextMode(context.Background(), *backendName, lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, interactiveWriter, stderr, useColor, *hideInteractiveTaken, *showInteractivePartials, auditLogger)
 			if err != nil {
 				return err
 			}
@@ -325,12 +326,12 @@ func runDeterministicTextMode(ctx context.Context, backendName string, lookup ba
 	}, nil
 }
 
-func runInteractiveTextMode(ctx context.Context, backendName string, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, progressWriter io.Writer, color, hideTaken bool, auditLogger *audit.Logger) (runOutcome, error) {
+func runInteractiveTextMode(ctx context.Context, backendName string, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, progressWriter io.Writer, color, hideTaken, showPartials bool, auditLogger *audit.Logger) (runOutcome, error) {
 	totalPlanned := len(initialCandidates)
 	if generatePrompt != "" {
 		totalPlanned += cfg.Generate.Count
 	}
-	console := termui.NewConsole(progressWriter, lookup.ZoneNames(), initialCandidates, color, hideTaken)
+	console := termui.NewConsole(progressWriter, lookup.ZoneNames(), initialCandidates, color, hideTaken, showPartials)
 	if err := console.Start(totalPlanned, filterMode); err != nil {
 		return runOutcome{}, err
 	}
@@ -353,7 +354,7 @@ func runInteractiveTextMode(ctx context.Context, backendName string, lookup back
 		}
 		return output.WriteTextResult(resultWriter, event.Result)
 	}, func(event openai.Event) error {
-		return console.Note(renderGenerationEvent(event))
+		return console.UpdateStatus(renderGenerationEvent(event))
 	}, nil)
 	if err != nil {
 		return runOutcome{}, err
