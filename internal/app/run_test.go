@@ -221,6 +221,45 @@ func TestRunTextWorkflowInteractiveOverride(t *testing.T) {
 	}
 }
 
+func TestRunTextWorkflowInteractiveCanHideTakenRows(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run([]string{
+		"-interactive",
+		"-interactive-hide-taken",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-candidate", "example",
+		"-candidate", "missing",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty interactive stdout without -out", stdout.String())
+	}
+
+	progress := stderr.String()
+	if strings.Contains(progress, "example  (none)") || strings.Contains(progress, "taken") {
+		t.Fatalf("stderr = %q, want taken rows suppressed", progress)
+	}
+	wantFragments := []string{
+		"checking: example... [1/2]",
+		"checking: missing... [2/2]",
+		"missing",
+		"COM NET",
+		"all ✓",
+		"Done: checked 2 | emitted 2 | strong 1\n",
+	}
+	for _, fragment := range wantFragments {
+		if !strings.Contains(progress, fragment) {
+			t.Fatalf("stderr missing %q:\n%s", fragment, progress)
+		}
+	}
+}
+
 func TestRunTextWorkflowWithCandidateFileInteractive(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

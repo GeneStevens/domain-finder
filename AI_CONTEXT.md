@@ -124,8 +124,9 @@ available domains.
   - a compact `result` column:
     - `all ✓` for strongest all-zone hits
     - `partial` for mixed availability
-    - `taken` when no requested zones are available
+  - `taken` when no requested zones are available
   - optional ANSI emphasis for strongest all-zone hits
+  - optional taken-row suppression for the interactive tape only
   - a compact final completion line
 - Interactive mode keeps the compact human-facing table on `stderr`; deterministic detailed output is preserved for non-interactive mode and `-out` files.
 - JSONL bypasses `termui` entirely.
@@ -150,6 +151,7 @@ available domains.
 - `-out <path>` writes durable output to a file instead of stdout.
 - `-interactive` forces interactive text console mode.
 - `-no-interactive` forces deterministic fallback text mode.
+- `-interactive-hide-taken` suppresses durable `taken` rows only in interactive mode.
 - `-color` / `-no-color` control interactive ANSI styling.
 
 ## Testing rule

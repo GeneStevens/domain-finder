@@ -15,6 +15,7 @@ type Console struct {
 	w           io.Writer
 	zones       []string
 	color       bool
+	hideTaken   bool
 	candWidth   int
 	zoneWidth   int
 	statusWidth int
@@ -22,7 +23,7 @@ type Console struct {
 }
 
 // NewConsole creates a new streaming console.
-func NewConsole(w io.Writer, zones []string, candidates []string, color bool) *Console {
+func NewConsole(w io.Writer, zones []string, candidates []string, color, hideTaken bool) *Console {
 	width := len("stem")
 	for _, candidate := range candidates {
 		if len(candidate) > width {
@@ -46,6 +47,7 @@ func NewConsole(w io.Writer, zones []string, candidates []string, color bool) *C
 		w:           w,
 		zones:       zones,
 		color:       color,
+		hideTaken:   hideTaken,
 		candWidth:   width,
 		zoneWidth:   zoneWidth,
 		statusWidth: statusWidth,
@@ -118,6 +120,9 @@ func (c *Console) UpdateActive(index, total int, candidate string) error {
 
 // EmitRow writes a durable emitted row to the console.
 func (c *Console) EmitRow(result match.CandidateResult) error {
+	if !c.ShouldEmitRow(result) {
+		return c.ClearActive()
+	}
 	if err := c.ClearActive(); err != nil {
 		return err
 	}
@@ -126,6 +131,18 @@ func (c *Console) EmitRow(result match.CandidateResult) error {
 	}
 	_, err := fmt.Fprintln(c.w, c.formatRow(result))
 	return err
+}
+
+// ShouldEmitRow reports whether the result should be shown as a durable
+// interactive row under the current UI policy.
+func (c *Console) ShouldEmitRow(result match.CandidateResult) bool {
+	if c == nil {
+		return true
+	}
+	if !c.hideTaken {
+		return true
+	}
+	return c.availableZonesText(result) != "(none)"
 }
 
 // ClearActive clears the transient active line.

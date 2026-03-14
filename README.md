@@ -148,6 +148,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - Interactive console is enabled only for `text` mode when `stderr` is a TTY
 - `-interactive` forces the interactive console on
 - `-no-interactive` forces the deterministic fallback report path
+- `-interactive-hide-taken` suppresses durable `taken` rows in the interactive compact table only
 - `-color` forces ANSI styling in interactive mode
 - `-no-color` disables ANSI styling in interactive mode
 - `jsonl` mode never uses the interactive console
@@ -167,6 +168,8 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - `partial` means only some requested zones are available
   - `taken` means none of the requested zones are available
 - Strongest all-zone hits stay visually strongest with the success marker and optional ANSI styling
+- `-interactive-hide-taken` only suppresses durable `taken` rows on the interactive tape
+- It does not change matching, filtering, non-interactive text output, or JSONL output
 - Clears the active line cleanly on completion and prints a compact final status
 
 ## stdout / stderr / file behavior
@@ -230,6 +233,20 @@ env GOCACHE=/tmp/domain-finder-gocache \
 go run ./cmd/domain-finder \
   -backend file \
   -interactive \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -candidate example \
+  -candidate missing
+```
+
+Interactive console with taken rows suppressed:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -backend file \
+  -interactive \
+  -interactive-hide-taken \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
   -candidate example \

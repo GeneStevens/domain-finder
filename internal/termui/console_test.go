@@ -12,7 +12,7 @@ import (
 
 func TestConsoleRendersHeaderAndRows(t *testing.T) {
 	var buf bytes.Buffer
-	console := NewConsole(&buf, []string{"com", "net"}, []string{"example", "missing"}, false)
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"example", "missing"}, false, false)
 
 	if err := console.Start(2, report.FilterAbsentInAll); err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -56,7 +56,7 @@ func TestConsoleRendersHeaderAndRows(t *testing.T) {
 
 func TestConsoleFormatsPartialAndTakenRowsClearly(t *testing.T) {
 	var buf bytes.Buffer
-	console := NewConsole(&buf, []string{"com", "net"}, []string{"partialstem", "takenstem"}, false)
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"partialstem", "takenstem"}, false, false)
 
 	if err := console.EmitRow(match.CandidateResult{
 		Candidate:    "partialstem",
@@ -90,7 +90,7 @@ func TestConsoleFormatsPartialAndTakenRowsClearly(t *testing.T) {
 
 func TestConsoleAdaptsColumnWidths(t *testing.T) {
 	var buf bytes.Buffer
-	console := NewConsole(&buf, []string{"com", "network", "org"}, []string{"verylongstemname"}, false)
+	console := NewConsole(&buf, []string{"com", "network", "org"}, []string{"verylongstemname"}, false, false)
 
 	if console.candWidth < len("verylongstemname") {
 		t.Fatalf("candWidth = %d, want width for longest stem", console.candWidth)
@@ -131,7 +131,7 @@ func TestShouldUseColor(t *testing.T) {
 
 func TestConsoleStylesStrongHitsWhenEnabled(t *testing.T) {
 	var buf bytes.Buffer
-	console := NewConsole(&buf, []string{"com", "net"}, []string{"missing"}, true)
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"missing"}, true, false)
 
 	if err := console.EmitRow(match.CandidateResult{
 		Candidate:   "missing",
@@ -147,5 +147,66 @@ func TestConsoleStylesStrongHitsWhenEnabled(t *testing.T) {
 	got := buf.String()
 	if !strings.Contains(got, "missing") || !strings.Contains(got, "\x1b[1;97;42mall ✓\x1b[0m") {
 		t.Fatalf("styled row = %q, want ANSI strong-hit emphasis", got)
+	}
+}
+
+func TestConsoleCanSuppressTakenRows(t *testing.T) {
+	var buf bytes.Buffer
+	console := NewConsole(&buf, []string{"com", "net"}, []string{"takenstem", "partialstem", "strongstem"}, false, true)
+
+	taken := match.CandidateResult{
+		Candidate:    "takenstem",
+		PresentInAny: true,
+		Zones: []match.ZonePresence{
+			{Zone: "com", Present: true},
+			{Zone: "net", Present: true},
+		},
+	}
+	partial := match.CandidateResult{
+		Candidate:    "partialstem",
+		PresentInAny: true,
+		Zones: []match.ZonePresence{
+			{Zone: "com", Present: false},
+			{Zone: "net", Present: true},
+		},
+	}
+	strong := match.CandidateResult{
+		Candidate:   "strongstem",
+		AbsentInAll: true,
+		Zones: []match.ZonePresence{
+			{Zone: "com", Present: false},
+			{Zone: "net", Present: false},
+		},
+	}
+
+	if console.ShouldEmitRow(taken) {
+		t.Fatal("ShouldEmitRow(taken) = true, want false when hideTaken is enabled")
+	}
+	if !console.ShouldEmitRow(partial) {
+		t.Fatal("ShouldEmitRow(partial) = false, want true")
+	}
+	if !console.ShouldEmitRow(strong) {
+		t.Fatal("ShouldEmitRow(strong) = false, want true")
+	}
+
+	if err := console.EmitRow(taken); err != nil {
+		t.Fatalf("EmitRow(taken) error = %v", err)
+	}
+	if err := console.EmitRow(partial); err != nil {
+		t.Fatalf("EmitRow(partial) error = %v", err)
+	}
+	if err := console.EmitRow(strong); err != nil {
+		t.Fatalf("EmitRow(strong) error = %v", err)
+	}
+
+	got := buf.String()
+	if strings.Contains(got, "takenstem") {
+		t.Fatalf("console output = %q, want taken row suppressed", got)
+	}
+	if !strings.Contains(got, "partialstem") || !strings.Contains(got, "partial") {
+		t.Fatalf("console output = %q, want partial row preserved", got)
+	}
+	if !strings.Contains(got, "strongstem") || !strings.Contains(got, "all ✓") {
+		t.Fatalf("console output = %q, want strong row preserved", got)
 	}
 }
