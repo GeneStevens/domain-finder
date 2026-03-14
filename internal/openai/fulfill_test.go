@@ -192,7 +192,46 @@ func TestFulfillBannedSubstringsAreRejected(t *testing.T) {
 	if !reflect.DeepEqual(accepted, []string{"noviq", "trynex"}) {
 		t.Fatalf("accepted = %#v, want [noviq trynex]", accepted)
 	}
-	if len(events) < 3 || events[1].Rejected != 2 {
+	if len(events) < 3 || events[1].Banned != 2 {
 		t.Fatalf("events = %#v, want lexical rejection accounting", events)
+	}
+}
+
+func TestFulfillQualityRejectedStems(t *testing.T) {
+	generator := &scriptedGenerator{
+		responses: []scriptedResponse{
+			{stems: []string{"veloria", "theravia", "noviq"}},
+			{stems: []string{"traktor"}},
+		},
+	}
+	collector := candidates.NewCollector()
+	fulfiller := NewFulfiller(generator, config.GenerateConfig{
+		BatchSize:           2,
+		MaxAttemptsPerBatch: 2,
+		RetryCount:          0,
+		QualityProfile:      "industrial",
+	})
+	fulfiller.Sleep = func(context.Context, time.Duration) error { return nil }
+
+	var accepted []string
+	var events []Event
+	err := fulfiller.Fulfill(context.Background(), "industrial infrastructure stems", 2, func(raw []string, limit int) (candidates.BatchReport, error) {
+		report := collector.AddGeneratedReportLimited(raw, limit, candidates.GeneratedPolicy{
+			QualityProfile: "industrial",
+		})
+		accepted = append(accepted, report.Accepted...)
+		return report, nil
+	}, func(event Event) error {
+		events = append(events, event)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Fulfill() error = %v", err)
+	}
+	if !reflect.DeepEqual(accepted, []string{"noviq", "traktor"}) {
+		t.Fatalf("accepted = %#v, want [noviq traktor]", accepted)
+	}
+	if len(events) < 3 || events[1].QualityRejected != 2 {
+		t.Fatalf("events = %#v, want quality rejection accounting", events)
 	}
 }

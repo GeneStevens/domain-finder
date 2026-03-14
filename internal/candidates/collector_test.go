@@ -18,3 +18,22 @@ func TestAddGeneratedReportLimitedRejectsAvoidSubstrings(t *testing.T) {
 		t.Fatalf("Accepted = %#v, want [noviq trynex]", report.Accepted)
 	}
 }
+
+func TestAddGeneratedReportLimitedRejectsWeakQuality(t *testing.T) {
+	collector := NewCollector()
+	report := collector.AddGeneratedReportLimited([]string{
+		"theravia",
+		"veloria",
+		"traktor",
+	}, 3, GeneratedPolicy{QualityProfile: "industrial"})
+
+	if report.QualityRejected != 2 {
+		t.Fatalf("QualityRejected = %d, want 2", report.QualityRejected)
+	}
+	if len(report.Accepted) != 1 || report.Accepted[0] != "traktor" {
+		t.Fatalf("Accepted = %#v, want [traktor]", report.Accepted)
+	}
+	if report.QualityReasons["pharma_like_suffix"] == 0 {
+		t.Fatalf("QualityReasons = %#v, want pharma_like_suffix accounting", report.QualityReasons)
+	}
+}

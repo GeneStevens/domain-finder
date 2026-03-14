@@ -15,6 +15,7 @@ import (
 	"github.com/genestevens/domain-finder/internal/backend"
 	"github.com/genestevens/domain-finder/internal/candidates"
 	"github.com/genestevens/domain-finder/internal/config"
+	"github.com/genestevens/domain-finder/internal/genquality"
 	"github.com/genestevens/domain-finder/internal/match"
 	"github.com/genestevens/domain-finder/internal/openai"
 	"github.com/genestevens/domain-finder/internal/output"
@@ -57,6 +58,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	generateStyle := fs.String("generate-style", "", "style guidance for generation, such as invented SaaS or developer tool")
 	generateCount := fs.Int("generate-count", 0, "total number of stems to generate")
 	generateBatchSize := fs.Int("generate-batch-size", 0, "number of stems requested per generation batch")
+	generateQualityProfile := fs.String("generate-quality-profile", "", "generated-stem quality profile: industrial | off")
 	generateMaxLength := fs.Int("generate-max-length", 0, "preferred maximum letters per generated stem")
 	generateMaxSyllables := fs.Int("generate-max-syllables", 0, "preferred maximum syllables per generated stem")
 	generateSuffix := fs.String("generate-suffix", "", "prefer generated stems ending with this text")
@@ -154,6 +156,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			OpenAIModel:             strings.TrimSpace(*generateModel),
 			GenerateCount:           *generateCount,
 			GenerateBatchSize:       *generateBatchSize,
+			GenerateQualityProfile:  strings.TrimSpace(*generateQualityProfile),
 			GenerateMaxLength:       *generateMaxLength,
 			GenerateMaxSyllables:    *generateMaxSyllables,
 			GenerateSuffix:          strings.TrimSpace(*generateSuffix),
@@ -164,6 +167,12 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		})
 		if err != nil {
 			return err
+		}
+		if trimmedGeneratePrompt != "" || *generateDryRun {
+			cfg.Generate.QualityProfile, err = genquality.NormalizeProfile(cfg.Generate.QualityProfile)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	if *generateDryRun {
@@ -335,6 +344,7 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 	err := fulfiller.Fulfill(ctx, generatePrompt, cfg.Generate.Count, func(rawBatch []string, limit int) (candidates.BatchReport, error) {
 		report := collector.AddGeneratedReportLimited(rawBatch, limit, candidates.GeneratedPolicy{
 			AvoidSubstrings: cfg.Generate.AvoidSubstrings,
+			QualityProfile:  cfg.Generate.QualityProfile,
 		})
 		if err := processBatch(report.Accepted); err != nil {
 			return candidates.BatchReport{}, err
@@ -377,7 +387,7 @@ func renderGenerationEvent(event openai.Event) string {
 		if event.Err != nil && openai.IsQuality(event.Err) {
 			return fmt.Sprintf("generation: batch %d attempt %d produced unusable output, need %d more", event.Batch, event.Attempt, event.RemainingBatch)
 		}
-		return fmt.Sprintf("generation: batch %d attempt %d accepted %d, invalid %d, banned %d, duplicates %d, need %d more", event.Batch, event.Attempt, event.Accepted, event.Invalid, event.Rejected, event.Duplicates, event.RemainingBatch)
+		return fmt.Sprintf("generation: batch %d attempt %d accepted %d, invalid %d, banned %d, quality_rejected %d, duplicates %d, need %d more", event.Batch, event.Attempt, event.Accepted, event.Invalid, event.Banned, event.QualityRejected, event.Duplicates, event.RemainingBatch)
 	case openai.EventRetry:
 		return fmt.Sprintf("generation: retrying batch %d attempt %d (%d/%d) after transient error", event.Batch, event.Attempt, event.Retry, event.RetryCount)
 	case openai.EventComplete:

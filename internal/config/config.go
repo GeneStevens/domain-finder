@@ -31,6 +31,7 @@ type GenerateConfig struct {
 	BatchSize           int
 	MaxAttemptsPerBatch int
 	RetryCount          int
+	QualityProfile      string
 	MaxLength           int
 	MaxSyllables        int
 	Suffix              string
@@ -48,6 +49,7 @@ type CLIOverrides struct {
 	OpenAIModel             string
 	GenerateCount           int
 	GenerateBatchSize       int
+	GenerateQualityProfile  string
 	GenerateMaxLength       int
 	GenerateMaxSyllables    int
 	GenerateSuffix          string
@@ -64,6 +66,7 @@ type fileConfig struct {
 	GenerateBatchSize       int
 	GenerateMaxAttempts     int
 	GenerateRetryCount      int
+	GenerateQualityProfile  string
 	GenerateMaxLength       int
 	GenerateMaxSyllables    int
 	GenerateSuffix          string
@@ -85,6 +88,7 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 			BatchSize:           10,
 			MaxAttemptsPerBatch: 3,
 			RetryCount:          2,
+			QualityProfile:      "industrial",
 		},
 	}
 
@@ -140,6 +144,9 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 		}
 		cfg.Generate.RetryCount = parsed
 	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_QUALITY_PROFILE"); ok && value != "" {
+		cfg.Generate.QualityProfile = strings.TrimSpace(value)
+	}
 	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_MAX_LENGTH"); ok && value != "" {
 		parsed, err := strconv.Atoi(value)
 		if err != nil {
@@ -175,6 +182,9 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	}
 	if cli.GenerateBatchSize > 0 {
 		cfg.Generate.BatchSize = cli.GenerateBatchSize
+	}
+	if cli.GenerateQualityProfile != "" {
+		cfg.Generate.QualityProfile = strings.TrimSpace(cli.GenerateQualityProfile)
 	}
 	if cli.GenerateMaxLength > 0 {
 		cfg.Generate.MaxLength = cli.GenerateMaxLength
@@ -219,6 +229,9 @@ func applyFileConfig(cfg *Config, fc fileConfig) {
 	}
 	if fc.GenerateRetryCount >= 0 {
 		cfg.Generate.RetryCount = fc.GenerateRetryCount
+	}
+	if fc.GenerateQualityProfile != "" {
+		cfg.Generate.QualityProfile = strings.TrimSpace(fc.GenerateQualityProfile)
 	}
 	if fc.GenerateMaxLength > 0 {
 		cfg.Generate.MaxLength = fc.GenerateMaxLength
@@ -305,6 +318,8 @@ func loadFile(path string) (fileConfig, error) {
 				return fileConfig{}, fmt.Errorf("parse %s generate.retry_count: %w", path, err)
 			}
 			cfg.GenerateRetryCount = parsed
+		case "generate.quality_profile":
+			cfg.GenerateQualityProfile = value
 		case "generate.max_length":
 			parsed, err := strconv.Atoi(value)
 			if err != nil {

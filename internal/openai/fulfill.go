@@ -91,19 +91,20 @@ const (
 
 // Event reports concise batch-generation progress.
 type Event struct {
-	Type           EventType
-	Batch          int
-	Attempt        int
-	Requested      int
-	Accepted       int
-	Invalid        int
-	Duplicates     int
-	Rejected       int
-	RemainingBatch int
-	RemainingTotal int
-	Retry          int
-	RetryCount     int
-	Err            error
+	Type            EventType
+	Batch           int
+	Attempt         int
+	Requested       int
+	Accepted        int
+	Invalid         int
+	Banned          int
+	QualityRejected int
+	Duplicates      int
+	RemainingBatch  int
+	RemainingTotal  int
+	Retry           int
+	RetryCount      int
+	Err             error
 }
 
 // FulfillmentError reports that bounded generation could not satisfy the request.
@@ -223,16 +224,17 @@ func (f *Fulfiller) Fulfill(ctx context.Context, prompt string, totalRequested i
 			remainingTotal = totalRequested - totalAccepted
 
 			if err := notifyEvent(notify, Event{
-				Type:           EventBatchResult,
-				Batch:          batchNumber,
-				Attempt:        attempt,
-				Requested:      need,
-				Accepted:       len(report.Accepted),
-				Invalid:        report.Invalid,
-				Duplicates:     report.Duplicates,
-				Rejected:       report.LexicalRejected,
-				RemainingBatch: target - batchAccepted,
-				RemainingTotal: remainingTotal,
+				Type:            EventBatchResult,
+				Batch:           batchNumber,
+				Attempt:         attempt,
+				Requested:       need,
+				Accepted:        len(report.Accepted),
+				Invalid:         report.Invalid,
+				Banned:          report.LexicalRejected,
+				QualityRejected: report.QualityRejected,
+				Duplicates:      report.Duplicates,
+				RemainingBatch:  target - batchAccepted,
+				RemainingTotal:  remainingTotal,
 			}); err != nil {
 				return err
 			}

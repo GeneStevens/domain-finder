@@ -1,3 +1,5 @@
+# Copy to domain-finder.yaml and customize for your environment.
+
 postgres:
   dsn: ""
 
@@ -9,9 +11,10 @@ generate:
   batch_size: 10
   max_attempts: 3
   retry_count: 2
-  max_length: 12
+  quality_profile: industrial
+  max_length: 10
   max_syllables: 3
   prefix: ""
-  suffix: io
-  style: invented SaaS
+  suffix: ""
+  style: industrial infrastructure naming
   avoid_substrings: dev,code,stack,cloud,sync,ops,grid,craft,build,tool,lab,forge,flow

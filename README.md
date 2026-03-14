@@ -101,6 +101,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-batch-size` sets the per-request batch size
 - `-generate-model` overrides the configured OpenAI model
 - `-generate-style` adds reusable style guidance such as `invented SaaS` or `developer tool`
+- `-generate-quality-profile industrial|off` applies a generated-only quality filter after validation and lexical bans
 - `-generate-max-length` prefers stems with no more than `N` letters
 - `-generate-max-syllables` prefers shorter, simpler-sounding stems
 - `-generate-prefix` prefers stems that start with specific text
@@ -125,12 +126,16 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `avoid_substrings` is stronger than prompt guidance alone:
   - it is rendered into the prompt contract as an explicit negative rule
   - generated stems containing banned substrings are also hard-rejected after generation
+- `generate.quality_profile` is a generated-only taste filter:
+  - `industrial` favors stronger, harder-edged infrastructure-like name shapes
+  - weak soft/pharma-like generated stems can still be rejected even if they pass normal validation
+  - manual CLI, file, and stdin stems are not filtered by this profile
 - `-generate-dry-run` uses the same resolved config and prompt builder, but does not require an API key and does not touch the network
 
 ## Generation dry run
 
 - `-generate-dry-run` is an inspection mode for prompt tuning
-- It prints the resolved model, generation counts, retry policy, theme, style, structural constraints, and the final prompt-builder output
+- It prints the resolved model, generation counts, retry policy, quality profile, theme, style, structural constraints, and the final prompt-builder output
 - `-generate-dry-run-format text` keeps the current readable inspection block
 - `-generate-dry-run-format json` emits a stable JSON contract for diffing, archiving, and tooling
 - It exits before backend loading, OpenAI client creation, or any network call
@@ -146,6 +151,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - Transient OpenAI failures such as rate limits or server errors are retried a bounded number of times
 - Poor model output such as duplicates, FQDNs, punctuation, empty values, or noisy text is treated as degraded batch quality rather than silently corrupting the candidate pipeline
 - Generated stems containing banned substrings are rejected before lookup and counted as unusable batch output
+- Generated stems can also be rejected by the configured quality profile before lookup, and those rejections are counted separately in generation progress
 - Interactive and text-mode generation runs emit concise stderr status lines showing batch requests, accepted/rejected counts, retries, and completion/failure
 - JSONL mode stays machine-readable and does not emit live generation progress
 
@@ -351,6 +357,7 @@ go run ./cmd/domain-finder \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
   -generate "short product name stems" \
+  -generate-quality-profile industrial \
   -generate-style "developer tool" \
   -generate-count 8 \
   -generate-batch-size 4 \
@@ -371,6 +378,7 @@ go run ./cmd/domain-finder \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
   -generate "short product name stems" \
+  -generate-quality-profile industrial \
   -generate-style "developer tool" \
   -generate-count 8 \
   -generate-batch-size 4 \
@@ -387,6 +395,7 @@ env GOCACHE=/tmp/domain-finder-gocache \
 go run ./cmd/domain-finder \
   -generate "short product name stems" \
   -generate-dry-run \
+  -generate-quality-profile industrial \
   -generate-style "developer tool" \
   -generate-max-length 12 \
   -generate-max-syllables 3 \
@@ -402,6 +411,7 @@ go run ./cmd/domain-finder \
   -generate "short product name stems" \
   -generate-dry-run \
   -generate-dry-run-format json \
+  -generate-quality-profile industrial \
   -generate-style "developer tool" \
   -generate-max-length 12 \
   -generate-max-syllables 3 \
@@ -412,7 +422,7 @@ go run ./cmd/domain-finder \
 Typical operator feedback during generation:
 
 - `generation: batch 1 attempt 1 requesting 3 stems`
-- `generation: batch 1 attempt 1 accepted 2, invalid 1, duplicates 0, need 1 more`
+- `generation: batch 1 attempt 1 accepted 2, invalid 1, banned 0, quality_rejected 1, duplicates 0, need 1 more`
 - `generation: retrying batch 1 attempt 2 (1/2) after transient error`
 - `generation: complete, accepted 6 stems`
 
@@ -424,11 +434,12 @@ generate:
   batch_size: 10
   max_attempts: 3
   retry_count: 2
-  max_length: 12
+  quality_profile: industrial
+  max_length: 10
   max_syllables: 3
-  prefix: dev
-  suffix: io
-  style: invented SaaS
+  prefix: ""
+  suffix: ""
+  style: industrial infrastructure naming
   avoid_substrings: dev,code,stack,cloud,sync,ops,grid,craft,build,tool,lab,forge,flow
 ```
 

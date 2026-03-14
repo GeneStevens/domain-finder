@@ -11,6 +11,7 @@ import (
 func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 	builder := PromptBuilder{}
 	got := builder.BuildUserPrompt(PromptInput{
+		QualityProfile:  "industrial",
 		Theme:           "invented product names",
 		Style:           "developer tool",
 		MaxLength:       12,
@@ -24,6 +25,8 @@ func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 		"Generate 25 candidate stems.",
 		"Theme: invented product names",
 		"Style: developer tool",
+		"Quality profile: industrial",
+		"infrastructure-like stems",
 		"no more than 12 letters",
 		"no more than 3 syllables",
 		"start with `dev`",
@@ -42,6 +45,7 @@ func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 
 func TestNewPromptInputFromConfig(t *testing.T) {
 	got := NewPromptInput("security names", config.GenerateConfig{
+		QualityProfile:  "industrial",
 		Style:           "security product",
 		MaxLength:       10,
 		MaxSyllables:    2,
@@ -50,7 +54,7 @@ func TestNewPromptInputFromConfig(t *testing.T) {
 		AvoidSubstrings: []string{"dev", "cloud"},
 	})
 
-	if got.Theme != "security names" || got.Style != "security product" || got.MaxLength != 10 || got.MaxSyllables != 2 || got.Prefix != "sec" || got.Suffix != "ix" || len(got.AvoidSubstrings) != 2 {
+	if got.QualityProfile != "industrial" || got.Theme != "security names" || got.Style != "security product" || got.MaxLength != 10 || got.MaxSyllables != 2 || got.Prefix != "sec" || got.Suffix != "ix" || len(got.AvoidSubstrings) != 2 {
 		t.Fatalf("NewPromptInput() = %#v, want populated constraint input", got)
 	}
 }
@@ -66,6 +70,7 @@ func TestBuildContractAndRender(t *testing.T) {
 			BatchSize:           4,
 			MaxAttemptsPerBatch: 3,
 			RetryCount:          2,
+			QualityProfile:      "industrial",
 			MaxLength:           12,
 			MaxSyllables:        3,
 			Prefix:              "dev",
@@ -87,6 +92,7 @@ func TestBuildContractAndRender(t *testing.T) {
 		"batch_size: 4",
 		"max_attempts: 3",
 		"retry_count: 2",
+		"quality_profile: industrial",
 		"theme: short product name stems",
 		"style: developer tool",
 		"max_length: 12",
@@ -118,6 +124,7 @@ func TestRenderContractJSON(t *testing.T) {
 			BatchSize:           4,
 			MaxAttemptsPerBatch: 3,
 			RetryCount:          2,
+			QualityProfile:      "industrial",
 			MaxLength:           12,
 			MaxSyllables:        3,
 			Prefix:              "dev",
@@ -148,6 +155,9 @@ func TestRenderContractJSON(t *testing.T) {
 	}
 	if got["theme"] != "short product name stems" {
 		t.Fatalf("theme = %#v, want short product name stems", got["theme"])
+	}
+	if got["quality_profile"] != "industrial" {
+		t.Fatalf("quality_profile = %#v, want industrial", got["quality_profile"])
 	}
 	constraints, ok := got["constraints"].(map[string]any)
 	if !ok {

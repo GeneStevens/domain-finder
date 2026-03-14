@@ -15,6 +15,7 @@ available domains.
 - `internal/backend`: backend-neutral lookup interface plus file and PostgreSQL backends
 - `internal/candidates`: stem loading, normalization, merge, and dedupe
 - `internal/config`: YAML config loading and precedence resolution
+- `internal/genquality`: generated-stem quality profiles and explainable rule-based scoring
 - `internal/match`: stable stem result model and per-zone classification
 - `internal/openai`: batched OpenAI stem generation
 - `internal/report`: filter modes and summary stats
@@ -95,13 +96,14 @@ available domains.
   - generation happens in batches
   - each batch is normalized, deduped, and processed before the next batch
   - `internal/openai` owns a dedicated prompt builder for the generation contract
-  - prompt constraints can steer length, syllables, prefix, suffix, style, and banned substrings
+  - prompt constraints can steer length, syllables, prefix, suffix, style, banned substrings, and the generated quality profile
   - generated outputs must be stems only, not FQDNs
   - each batch has bounded fulfillment attempts
   - transient API failures have bounded retries inside one attempt
   - degraded model output is rejected without contaminating the candidate set
   - prompt guidance is not validation; generated stems still pass through the normal candidate validation gate
   - `avoid_substrings` is also hard-enforced after generation, before lookup
+  - generated stems can also be rejected by a generated-only quality profile, currently `industrial`
   - dry-run uses the same config-resolution and prompt-builder path as a real run
 
 ## Result model
@@ -148,7 +150,7 @@ available domains.
 - `-generate-dry-run` prints the resolved prompt contract and exits without an API call.
 - `-generate-dry-run-format text|json` selects human-readable or machine-readable contract inspection.
 - `-generate-count`, `-generate-batch-size`, and `-generate-model` override generation config.
-- `-generate-style`, `-generate-max-length`, `-generate-max-syllables`, `-generate-prefix`, `-generate-suffix`, and `-generate-avoid-substrings` steer prompt construction.
+- `-generate-style`, `-generate-quality-profile`, `-generate-max-length`, `-generate-max-syllables`, `-generate-prefix`, `-generate-suffix`, and `-generate-avoid-substrings` steer prompt construction.
 - `generate.max_attempts` and `generate.retry_count` harden generation behavior from YAML/env config.
 - `-format text|jsonl` selects a human-readable or machine-readable output mode.
 - `-filter all|absent-in-all` controls which results are emitted.

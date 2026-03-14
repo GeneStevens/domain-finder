@@ -1,6 +1,10 @@
 package candidates
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/genestevens/domain-finder/internal/genquality"
+)
 
 // Collector incrementally normalizes and deduplicates candidate stems while
 // preserving first-seen order.
@@ -14,12 +18,15 @@ type BatchReport struct {
 	Invalid         int
 	Duplicates      int
 	LexicalRejected int
+	QualityRejected int
+	QualityReasons  map[string]int
 }
 
 // GeneratedPolicy defines generation-specific acceptance rules applied after
 // normal stem validation.
 type GeneratedPolicy struct {
 	AvoidSubstrings []string
+	QualityProfile  string
 }
 
 // NewCollector creates an empty collector.
@@ -84,6 +91,17 @@ func (c *Collector) AddGeneratedReportLimited(raws []string, limit int, policy G
 		}
 		if containsAvoidSubstring(normalized, policy.AvoidSubstrings) {
 			report.LexicalRejected++
+			continue
+		}
+		evaluation := genquality.Evaluate(normalized, policy.QualityProfile)
+		if !evaluation.Accepted {
+			report.QualityRejected++
+			if report.QualityReasons == nil {
+				report.QualityReasons = make(map[string]int, len(evaluation.Reasons))
+			}
+			for _, reason := range evaluation.Reasons {
+				report.QualityReasons[string(reason)]++
+			}
 			continue
 		}
 		if _, ok := c.seen[normalized]; ok {

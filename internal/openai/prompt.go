@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/genestevens/domain-finder/internal/config"
+	"github.com/genestevens/domain-finder/internal/genquality"
 )
 
 const systemPrompt = "You generate candidate domain stems. Return JSON only. Produce concise single-label stems only, no TLDs, no dots, no spaces, no numbering, no explanations, lowercase preferred."
@@ -13,6 +14,7 @@ const systemPrompt = "You generate candidate domain stems. Return JSON only. Pro
 // PromptInput describes one generation request before it is turned into the
 // final OpenAI instruction payload.
 type PromptInput struct {
+	QualityProfile  string
 	Theme           string
 	Style           string
 	MaxLength       int
@@ -33,6 +35,7 @@ type Contract struct {
 	BatchSize           int
 	MaxAttemptsPerBatch int
 	RetryCount          int
+	QualityProfile      string
 	Theme               string
 	Style               string
 	MaxLength           int
@@ -47,6 +50,7 @@ type Contract struct {
 // NewPromptInput builds a prompt input from resolved config and the CLI theme.
 func NewPromptInput(theme string, generate config.GenerateConfig) PromptInput {
 	return PromptInput{
+		QualityProfile:  strings.TrimSpace(generate.QualityProfile),
 		Theme:           strings.TrimSpace(theme),
 		Style:           strings.TrimSpace(generate.Style),
 		MaxLength:       generate.MaxLength,
@@ -67,6 +71,7 @@ func (b PromptBuilder) BuildContract(cfg config.Config, theme string) Contract {
 		BatchSize:           cfg.Generate.BatchSize,
 		MaxAttemptsPerBatch: cfg.Generate.MaxAttemptsPerBatch,
 		RetryCount:          cfg.Generate.RetryCount,
+		QualityProfile:      input.QualityProfile,
 		Theme:               input.Theme,
 		Style:               input.Style,
 		MaxLength:           input.MaxLength,
@@ -92,6 +97,10 @@ func (PromptBuilder) BuildUserPrompt(input PromptInput, count int) string {
 	}
 	if input.Style != "" {
 		lines = append(lines, "Style: "+input.Style)
+	}
+	if input.QualityProfile == genquality.ProfileIndustrial {
+		lines = append(lines, "Quality profile: industrial. Prefer compact, harder-edged, infrastructure-like stems with stronger consonant structure.")
+		lines = append(lines, "Avoid soft startup-mush, pharma/biotech-like endings, and weak generic enterprise-tech shapes.")
 	}
 	if input.MaxLength > 0 {
 		lines = append(lines, fmt.Sprintf("Constraint: each stem must be no more than %d letters.", input.MaxLength))
@@ -121,6 +130,7 @@ func RenderContract(contract Contract) string {
 	fmt.Fprintf(&out, "  batch_size: %d\n", contract.BatchSize)
 	fmt.Fprintf(&out, "  max_attempts: %d\n", contract.MaxAttemptsPerBatch)
 	fmt.Fprintf(&out, "  retry_count: %d\n", contract.RetryCount)
+	fmt.Fprintf(&out, "  quality_profile: %s\n", renderOptional(contract.QualityProfile))
 	fmt.Fprintf(&out, "  theme: %s\n", renderOptional(contract.Theme))
 	fmt.Fprintf(&out, "  style: %s\n", renderOptional(contract.Style))
 	fmt.Fprintf(&out, "  max_length: %s\n", renderOptionalInt(contract.MaxLength))
@@ -148,26 +158,28 @@ func RenderContractJSON(contract Contract) ([]byte, error) {
 		AvoidSubstrings []string `json:"avoid_substrings,omitempty"`
 	}
 	type view struct {
-		Model         string      `json:"model"`
-		GenerateCount int         `json:"generate_count"`
-		BatchSize     int         `json:"batch_size"`
-		MaxAttempts   int         `json:"max_attempts"`
-		RetryCount    int         `json:"retry_count"`
-		Theme         string      `json:"theme"`
-		Style         string      `json:"style,omitempty"`
-		Constraints   constraints `json:"constraints"`
-		SystemPrompt  string      `json:"system_prompt"`
-		UserPrompt    string      `json:"user_prompt"`
+		Model          string      `json:"model"`
+		GenerateCount  int         `json:"generate_count"`
+		BatchSize      int         `json:"batch_size"`
+		MaxAttempts    int         `json:"max_attempts"`
+		RetryCount     int         `json:"retry_count"`
+		QualityProfile string      `json:"quality_profile,omitempty"`
+		Theme          string      `json:"theme"`
+		Style          string      `json:"style,omitempty"`
+		Constraints    constraints `json:"constraints"`
+		SystemPrompt   string      `json:"system_prompt"`
+		UserPrompt     string      `json:"user_prompt"`
 	}
 
 	payload := view{
-		Model:         contract.Model,
-		GenerateCount: contract.GenerateCount,
-		BatchSize:     contract.BatchSize,
-		MaxAttempts:   contract.MaxAttemptsPerBatch,
-		RetryCount:    contract.RetryCount,
-		Theme:         contract.Theme,
-		Style:         contract.Style,
+		Model:          contract.Model,
+		GenerateCount:  contract.GenerateCount,
+		BatchSize:      contract.BatchSize,
+		MaxAttempts:    contract.MaxAttemptsPerBatch,
+		RetryCount:     contract.RetryCount,
+		QualityProfile: contract.QualityProfile,
+		Theme:          contract.Theme,
+		Style:          contract.Style,
 		Constraints: constraints{
 			MaxLength:       contract.MaxLength,
 			MaxSyllables:    contract.MaxSyllables,

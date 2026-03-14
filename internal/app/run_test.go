@@ -651,9 +651,9 @@ func TestRunTextWorkflowWithGeneratedStems(t *testing.T) {
 	progress := stderr.String()
 	wantProgress := []string{
 		"generation: batch 1 attempt 1 requesting 2 stems",
-		"generation: batch 1 attempt 1 accepted 2, invalid 0, banned 0, duplicates 0, need 0 more",
+		"generation: batch 1 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more",
 		"generation: batch 2 attempt 1 requesting 2 stems",
-		"generation: batch 2 attempt 1 accepted 2, invalid 0, banned 0, duplicates 0, need 0 more",
+		"generation: batch 2 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more",
 		"generation: complete, accepted 4 stems",
 	}
 	for _, fragment := range wantProgress {
@@ -710,9 +710,9 @@ func TestRunTextWorkflowInteractiveWithGeneratedStems(t *testing.T) {
 	wantProgress := []string{
 		"Searching 4 stems | filter: absent-in-all\n",
 		"generation: batch 1 attempt 1 requesting 2 stems",
-		"generation: batch 1 attempt 1 accepted 2, invalid 0, banned 0, duplicates 0, need 0 more",
+		"generation: batch 1 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more",
 		"generation: batch 2 attempt 1 requesting 1 stems",
-		"generation: batch 2 attempt 1 accepted 1, invalid 0, banned 0, duplicates 0, need 0 more",
+		"generation: batch 2 attempt 1 accepted 1, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more",
 		"generation: complete, accepted 3 stems",
 		"checking: missing... [1/4]",
 		"checking: brandfoo... [2/4]",
@@ -736,6 +736,7 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 		"generate:\n" +
 		"  count: 4\n" +
 		"  batch_size: 2\n" +
+		"  quality_profile: industrial\n" +
 		"  max_length: 9\n" +
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
@@ -749,7 +750,7 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 	generator := &fakeStemGenerator{
 		responses: []fakeStemResponse{
 			{stems: []string{"shieldr", "trynex"}},
-			{stems: []string{"noviq", "guardio"}},
+			{stems: []string{"noviq", "tractix"}},
 			{stems: []string{"secbase"}},
 		},
 	}
@@ -789,6 +790,9 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 	if captured.BatchSize != 2 {
 		t.Fatalf("captured.BatchSize = %d, want 2 from config", captured.BatchSize)
 	}
+	if captured.QualityProfile != "industrial" {
+		t.Fatalf("captured.QualityProfile = %q, want industrial from config", captured.QualityProfile)
+	}
 	if captured.MaxLength != 12 {
 		t.Fatalf("captured.MaxLength = %d, want 12 from CLI", captured.MaxLength)
 	}
@@ -825,6 +829,7 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"  batch_size: 2\n" +
 		"  max_attempts: 3\n" +
 		"  retry_count: 1\n" +
+		"  quality_profile: industrial\n" +
 		"  max_length: 10\n" +
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
@@ -868,6 +873,7 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"batch_size: 2",
 		"max_attempts: 3",
 		"retry_count: 1",
+		"quality_profile: industrial",
 		"theme: short product stems",
 		"style: security product",
 		"max_length: 10",
@@ -893,6 +899,7 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"generate:\n" +
 		"  count: 4\n" +
 		"  batch_size: 2\n" +
+		"  quality_profile: industrial\n" +
 		"  max_length: 9\n" +
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
@@ -923,6 +930,7 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"-generate-model", "cli-model",
 		"-generate-count", "8",
 		"-generate-batch-size", "4",
+		"-generate-quality-profile", "off",
 		"-generate-max-length", "12",
 		"-generate-max-syllables", "3",
 		"-generate-prefix", "dev",
@@ -939,6 +947,7 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"model: cli-model",
 		"generate_count: 8",
 		"batch_size: 4",
+		"quality_profile: off",
 		"max_length: 12",
 		"max_syllables: 3",
 		"prefix: dev",
@@ -965,6 +974,7 @@ func TestRunGenerateDryRunJSONOutput(t *testing.T) {
 		"  batch_size: 2\n" +
 		"  max_attempts: 3\n" +
 		"  retry_count: 1\n" +
+		"  quality_profile: industrial\n" +
 		"  max_length: 10\n" +
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
@@ -1010,6 +1020,9 @@ func TestRunGenerateDryRunJSONOutput(t *testing.T) {
 	if got["theme"] != "short product stems" || got["style"] != "security product" {
 		t.Fatalf("theme/style = %#v, want resolved prompt values", got)
 	}
+	if got["quality_profile"] != "industrial" {
+		t.Fatalf("quality_profile = %#v, want industrial", got["quality_profile"])
+	}
 	constraints, ok := got["constraints"].(map[string]any)
 	if !ok {
 		t.Fatalf("constraints = %#v, want object", got["constraints"])
@@ -1030,6 +1043,7 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		"generate:\n" +
 		"  count: 4\n" +
 		"  batch_size: 2\n" +
+		"  quality_profile: industrial\n" +
 		"  max_length: 9\n" +
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
@@ -1052,6 +1066,7 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		"-generate-model", "cli-model",
 		"-generate-count", "8",
 		"-generate-batch-size", "4",
+		"-generate-quality-profile", "off",
 		"-generate-max-length", "12",
 		"-generate-max-syllables", "3",
 		"-generate-prefix", "dev",
@@ -1068,6 +1083,9 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 	}
 	if got["model"] != "cli-model" || got["generate_count"] != float64(8) || got["batch_size"] != float64(4) {
 		t.Fatalf("top-level overrides = %#v, want CLI values", got)
+	}
+	if got["quality_profile"] != "off" {
+		t.Fatalf("quality_profile = %#v, want off", got["quality_profile"])
 	}
 	constraints := got["constraints"].(map[string]any)
 	if constraints["max_length"] != float64(12) || constraints["max_syllables"] != float64(3) || constraints["prefix"] != "dev" || constraints["suffix"] != "io" {
@@ -1132,6 +1150,51 @@ func TestRunTextWorkflowRejectsBannedGeneratedStems(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "banned 1") {
 		t.Fatalf("stderr = %q, want lexical-ban aggregate feedback", stderr.String())
+	}
+}
+
+func TestRunTextWorkflowRejectsWeakGeneratedStems(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  quality_profile: industrial\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		responses: []fakeStemResponse{
+			{stems: []string{"theravia", "noviq"}},
+			{stems: []string{"veloria", "traktor"}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-generate", "industrial infrastructure names",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if strings.Contains(stdout.String(), "theravia") || strings.Contains(stdout.String(), "veloria") {
+		t.Fatalf("stdout = %q, want weak generated stems rejected before lookup", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "noviq\n") || !strings.Contains(stdout.String(), "traktor\n") {
+		t.Fatalf("stdout = %q, want stronger generated stems accepted", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "quality_rejected 1") {
+		t.Fatalf("stderr = %q, want quality rejection aggregate feedback", stderr.String())
 	}
 }
 
@@ -1251,9 +1314,9 @@ func TestRunTextWorkflowWithDegradedGeneratedBatch(t *testing.T) {
 	progress := stderr.String()
 	wantProgress := []string{
 		"generation: batch 1 attempt 1 requesting 2 stems",
-		"generation: batch 1 attempt 1 accepted 0, invalid 1, banned 0, duplicates 1, need 2 more",
+		"generation: batch 1 attempt 1 accepted 0, invalid 1, banned 0, quality_rejected 0, duplicates 1, need 2 more",
 		"generation: batch 1 attempt 2 requesting 2 stems",
-		"generation: batch 1 attempt 2 accepted 2, invalid 0, banned 0, duplicates 0, need 0 more",
+		"generation: batch 1 attempt 2 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more",
 		"generation: complete, accepted 2 stems",
 	}
 	for _, fragment := range wantProgress {
