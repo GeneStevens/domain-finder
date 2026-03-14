@@ -20,6 +20,7 @@ import (
 	"github.com/genestevens/domain-finder/internal/openai"
 	"github.com/genestevens/domain-finder/internal/output"
 	"github.com/genestevens/domain-finder/internal/report"
+	"github.com/genestevens/domain-finder/internal/runsummary"
 	"github.com/genestevens/domain-finder/internal/termui"
 )
 
@@ -49,6 +50,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	filterValue := fs.String("filter", "all", "result filter: all | absent-in-all")
 	outPath := fs.String("out", "", "write output to this file instead of stdout")
 	auditLogPath := fs.String("audit-log", "", "write one audit JSONL record per checked stem to this file")
+	runSummaryPath := fs.String("run-summary", "", "write one machine-readable JSON run summary to this file")
 	pgDSN := fs.String("pg-dsn", "", "PostgreSQL DSN for the postgres backend")
 	candidateFile := fs.String("candidate-file", "", "read candidates from a text file")
 	candidateStdin := fs.Bool("candidate-stdin", false, "read candidates from stdin")
@@ -92,6 +94,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	}
 	if *generateDryRun && strings.TrimSpace(*auditLogPath) != "" {
 		return fmt.Errorf("-audit-log cannot be used with -generate-dry-run")
+	}
+	if *generateDryRun && strings.TrimSpace(*runSummaryPath) != "" {
+		return fmt.Errorf("-run-summary cannot be used with -generate-dry-run")
 	}
 	if len(zones) == 0 && !*generateDryRun {
 		fs.Usage()
@@ -141,6 +146,16 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		}
 		defer file.Close()
 		auditLogger = audit.NewLogger(file)
+	}
+
+	var runSummaryFile *os.File
+	if *runSummaryPath != "" {
+		file, err := os.Create(*runSummaryPath)
+		if err != nil {
+			return fmt.Errorf("create run summary %q: %w", *runSummaryPath, err)
+		}
+		defer file.Close()
+		runSummaryFile = file
 	}
 
 	var cfg config.Config
@@ -206,53 +221,86 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		defer lookupCloser.Close()
 	}
 
+	interactiveUsed := false
+	var outcome runOutcome
 	switch *format {
 	case "text":
 		if termui.ShouldUseInteractive(*format, *forceInteractive, *noInteractive, stderr, stderrIsTTY) {
+			interactiveUsed = true
 			interactiveWriter := io.Writer(nil)
 			if *outPath != "" {
 				interactiveWriter = writer
 			}
 			useColor := termui.ShouldUseColor(*forceColor, *noColor, stderr, stderrIsTTY)
-			return runInteractiveTextMode(context.Background(), *backendName, lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, interactiveWriter, stderr, useColor, *hideInteractiveTaken, auditLogger)
+			outcome, err = runInteractiveTextMode(context.Background(), *backendName, lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, interactiveWriter, stderr, useColor, *hideInteractiveTaken, auditLogger)
+			if err != nil {
+				return err
+			}
+			break
 		}
-		return runDeterministicTextMode(context.Background(), *backendName, lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, writer, stderr, auditLogger)
+		outcome, err = runDeterministicTextMode(context.Background(), *backendName, lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, writer, stderr, auditLogger)
+		if err != nil {
+			return err
+		}
 	case "jsonl":
-		allResults, filteredResults, _, err := processCandidates(context.Background(), lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, nil, nil, func(event progressEvent) error {
+		allResults, filteredResults, diagnostics, err := processCandidates(context.Background(), lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, nil, nil, func(event progressEvent) error {
 			return writeAuditRecord(auditLogger, *backendName, lookup.ZoneNames(), event.Result, event.ReportEmitted, false)
 		})
 		if err != nil {
 			return err
 		}
-		_ = allResults
-		return output.WriteJSONL(writer, filteredResults)
+		if err := output.WriteJSONL(writer, filteredResults); err != nil {
+			return err
+		}
+		outcome = runOutcome{
+			Summary:             report.Summarize(allResults, filteredResults),
+			Diagnostics:         diagnostics,
+			GeneratedAccepted:   len(allResults) - len(initialCandidates),
+			GenerationRequested: trimmedGeneratePrompt != "",
+		}
 	default:
 		return fmt.Errorf("unsupported -format %q: want text or jsonl", *format)
 	}
+	return writeRunSummary(runSummaryFile, buildRunSummary(*backendName, lookup.ZoneNames(), filterMode, *format, interactiveUsed, trimmedGeneratePrompt, cfg, outcome))
 }
 
-func runDeterministicTextMode(ctx context.Context, backendName string, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, statusWriter io.Writer, auditLogger *audit.Logger) error {
+type runOutcome struct {
+	Summary             report.Summary
+	Diagnostics         candidates.GenerationDiagnostics
+	GeneratedAccepted   int
+	GenerationRequested bool
+}
+
+func runDeterministicTextMode(ctx context.Context, backendName string, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, statusWriter io.Writer, auditLogger *audit.Logger) (runOutcome, error) {
 	allResults, filteredResults, diagnostics, err := processCandidates(ctx, lookup, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, nil, makeGenerationNotifier(statusWriter), func(event progressEvent) error {
 		return writeAuditRecord(auditLogger, backendName, lookup.ZoneNames(), event.Result, event.ReportEmitted, false)
 	})
 	if err != nil {
-		return err
+		return runOutcome{}, err
 	}
 	if err := writeGenerationDiagnostics(statusWriter, diagnostics); err != nil {
-		return err
+		return runOutcome{}, err
 	}
 	summary := report.Summarize(allResults, filteredResults)
-	return output.WriteText(resultWriter, filteredResults, summary)
+	if err := output.WriteText(resultWriter, filteredResults, summary); err != nil {
+		return runOutcome{}, err
+	}
+	return runOutcome{
+		Summary:             summary,
+		Diagnostics:         diagnostics,
+		GeneratedAccepted:   len(allResults) - len(initialCandidates),
+		GenerationRequested: generatePrompt != "",
+	}, nil
 }
 
-func runInteractiveTextMode(ctx context.Context, backendName string, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, progressWriter io.Writer, color, hideTaken bool, auditLogger *audit.Logger) error {
+func runInteractiveTextMode(ctx context.Context, backendName string, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, progressWriter io.Writer, color, hideTaken bool, auditLogger *audit.Logger) (runOutcome, error) {
 	totalPlanned := len(initialCandidates)
 	if generatePrompt != "" {
 		totalPlanned += cfg.Generate.Count
 	}
 	console := termui.NewConsole(progressWriter, lookup.ZoneNames(), initialCandidates, color, hideTaken)
 	if err := console.Start(totalPlanned, filterMode); err != nil {
-		return err
+		return runOutcome{}, err
 	}
 
 	allResults, emittedResults, diagnostics, err := processCandidates(ctx, lookup, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, func(event progressEvent) error {
@@ -276,20 +324,33 @@ func runInteractiveTextMode(ctx context.Context, backendName string, lookup back
 		return console.Note(renderGenerationEvent(event))
 	}, nil)
 	if err != nil {
-		return err
+		return runOutcome{}, err
 	}
 	if err := writeGenerationDiagnosticsToConsole(console, diagnostics); err != nil {
-		return err
+		return runOutcome{}, err
 	}
 
 	summary := report.Summarize(allResults, emittedResults)
 	if err := console.Finish(summary); err != nil {
-		return err
+		return runOutcome{}, err
 	}
 	if resultWriter == nil {
-		return nil
+		return runOutcome{
+			Summary:             summary,
+			Diagnostics:         diagnostics,
+			GeneratedAccepted:   len(allResults) - len(initialCandidates),
+			GenerationRequested: generatePrompt != "",
+		}, nil
 	}
-	return output.WriteTextSummary(resultWriter, summary)
+	if err := output.WriteTextSummary(resultWriter, summary); err != nil {
+		return runOutcome{}, err
+	}
+	return runOutcome{
+		Summary:             summary,
+		Diagnostics:         diagnostics,
+		GeneratedAccepted:   len(allResults) - len(initialCandidates),
+		GenerationRequested: generatePrompt != "",
+	}, nil
 }
 
 type progressEvent struct {
@@ -409,6 +470,43 @@ func writeGenerationDiagnosticsToConsole(console *termui.Console, diagnostics ca
 		}
 	}
 	return nil
+}
+
+func buildRunSummary(backendName string, requestedZones []string, filterMode report.FilterMode, format string, interactive bool, generatePrompt string, cfg config.Config, outcome runOutcome) runsummary.Artifact {
+	artifact := runsummary.Artifact{
+		Backend:           backendName,
+		RequestedZones:    append([]string(nil), requestedZones...),
+		FilterMode:        string(filterMode),
+		Interactive:       interactive,
+		Format:            format,
+		TotalCheckedStems: outcome.Summary.TotalCandidates,
+		EmittedResults:    outcome.Summary.EmittedResults,
+		StrongHits:        outcome.Summary.AbsentInAll,
+		PresentInAny:      outcome.Summary.PresentInAny,
+		Diagnostics:       runsummary.NewDiagnostics(outcome.Diagnostics),
+	}
+	if outcome.GenerationRequested {
+		artifact.Generation = &runsummary.Generation{
+			Model:           cfg.OpenAI.Model,
+			Prompt:          generatePrompt,
+			Style:           cfg.Generate.Style,
+			GenerateCount:   cfg.Generate.Count,
+			BatchSize:       cfg.Generate.BatchSize,
+			MaxAttempts:     cfg.Generate.MaxAttemptsPerBatch,
+			RetryCount:      cfg.Generate.RetryCount,
+			QualityProfile:  cfg.Generate.QualityProfile,
+			AvoidSubstrings: append([]string(nil), cfg.Generate.AvoidSubstrings...),
+			AcceptedCount:   outcome.GeneratedAccepted,
+		}
+	}
+	return artifact
+}
+
+func writeRunSummary(file *os.File, artifact runsummary.Artifact) error {
+	if file == nil {
+		return nil
+	}
+	return runsummary.Write(file, artifact)
 }
 
 func renderGenerationEvent(event openai.Event) string {

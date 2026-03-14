@@ -471,6 +471,50 @@ func TestRunNonInteractiveAuditLog(t *testing.T) {
 	}
 }
 
+func TestRunNonInteractiveRunSummary(t *testing.T) {
+	dir := t.TempDir()
+	summaryPath := filepath.Join(dir, "run-summary.json")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-run-summary", summaryPath,
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-candidate", "example",
+		"-candidate", "missing",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if !strings.Contains(stdout.String(), "summary\n") {
+		t.Fatalf("stdout = %q, want normal deterministic output", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty fallback stderr", stderr.String())
+	}
+
+	data, err := os.ReadFile(summaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\n%s", err, string(data))
+	}
+	if got["backend"] != "file" || got["filter_mode"] != "all" || got["interactive"] != false {
+		t.Fatalf("summary = %#v, want stable manual summary fields", got)
+	}
+	if got["total_checked_stems"] != float64(2) || got["emitted_results"] != float64(2) || got["strong_hits"] != float64(1) {
+		t.Fatalf("summary counts = %#v, want total 2 emitted 2 strong 1", got)
+	}
+	if _, ok := got["generation"]; ok {
+		t.Fatalf("generation = %#v, want omitted for manual-only run", got["generation"])
+	}
+}
+
 func TestRunAuditLogIncludesFilteredOutStem(t *testing.T) {
 	dir := t.TempDir()
 	auditPath := filepath.Join(dir, "run.jsonl")
@@ -525,6 +569,51 @@ func TestRunAuditLogIncludesFilteredOutStem(t *testing.T) {
 	}
 }
 
+func TestRunSummaryCoexistsWithAuditLog(t *testing.T) {
+	dir := t.TempDir()
+	auditPath := filepath.Join(dir, "run.jsonl")
+	summaryPath := filepath.Join(dir, "run-summary.json")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-interactive",
+		"-audit-log", auditPath,
+		"-run-summary", summaryPath,
+		"-filter", "absent-in-all",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-candidate", "example",
+		"-candidate", "missing",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty interactive stdout", stdout.String())
+	}
+
+	auditData, err := os.ReadFile(auditPath)
+	if err != nil {
+		t.Fatalf("ReadFile(audit) error = %v", err)
+	}
+	if len(strings.Split(strings.TrimSpace(string(auditData)), "\n")) != 2 {
+		t.Fatalf("audit = %q, want 2 records", string(auditData))
+	}
+
+	summaryData, err := os.ReadFile(summaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile(summary) error = %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(summaryData, &got); err != nil {
+		t.Fatalf("json.Unmarshal(summary) error = %v\n%s", err, string(summaryData))
+	}
+	if got["interactive"] != true || got["emitted_results"] != float64(1) {
+		t.Fatalf("summary = %#v, want interactive emitted summary", got)
+	}
+}
+
 func TestRunGenerateDryRunRejectsAuditLog(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -536,6 +625,20 @@ func TestRunGenerateDryRunRejectsAuditLog(t *testing.T) {
 	}, strings.NewReader(""), &stdout, &stderr)
 	if err == nil || !strings.Contains(err.Error(), "-audit-log cannot be used with -generate-dry-run") {
 		t.Fatalf("Run() error = %v, want audit/dry-run validation", err)
+	}
+}
+
+func TestRunGenerateDryRunRejectsRunSummary(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := Run([]string{
+		"-generate", "short product stems",
+		"-generate-dry-run",
+		"-run-summary", "run-summary.json",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err == nil || !strings.Contains(err.Error(), "-run-summary cannot be used with -generate-dry-run") {
+		t.Fatalf("Run() error = %v, want run-summary/dry-run validation", err)
 	}
 }
 
@@ -1217,6 +1320,76 @@ func TestRunTextWorkflowRejectsWeakGeneratedStems(t *testing.T) {
 	}
 }
 
+func TestRunGenerationRunSummaryIncludesDiagnostics(t *testing.T) {
+	dir := t.TempDir()
+	summaryPath := filepath.Join(dir, "run-summary.json")
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("openai:\n  model: yaml-model\ngenerate:\n  count: 2\n  batch_size: 2\n  quality_profile: industrial\n  avoid_substrings: dev,cloud\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		responses: []fakeStemResponse{
+			{stems: []string{"devspark", "theravia"}},
+			{stems: []string{"noviq", "traktor"}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-run-summary", summaryPath,
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-generate", "industrial infrastructure names",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	data, err := os.ReadFile(summaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v\n%s", err, string(data))
+	}
+	generation, ok := got["generation"].(map[string]any)
+	if !ok {
+		t.Fatalf("generation = %#v, want generation object", got["generation"])
+	}
+	if generation["model"] != "yaml-model" || generation["generate_count"] != float64(2) || generation["quality_profile"] != "industrial" {
+		t.Fatalf("generation = %#v, want resolved generation settings", generation)
+	}
+	if generation["accepted_count"] != float64(2) {
+		t.Fatalf("accepted_count = %#v, want 2", generation["accepted_count"])
+	}
+	diagnostics, ok := got["diagnostics"].(map[string]any)
+	if !ok {
+		t.Fatalf("diagnostics = %#v, want diagnostics object", got["diagnostics"])
+	}
+	if diagnostics["banned"] != float64(1) || diagnostics["quality_rejected"] != float64(1) {
+		t.Fatalf("diagnostics = %#v, want banned 1 quality_rejected 1", diagnostics)
+	}
+	reasons, ok := diagnostics["quality_reasons"].([]any)
+	if !ok || len(reasons) == 0 {
+		t.Fatalf("quality_reasons = %#v, want populated reason list", diagnostics["quality_reasons"])
+	}
+	if stderr.Len() == 0 {
+		t.Fatalf("stderr = %q, want normal generation status output", stderr.String())
+	}
+}
+
 func TestRunInteractiveGenerationDiagnosticsSummary(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  quality_profile: industrial\n"), 0o644); err != nil {
@@ -1320,6 +1493,46 @@ func TestRunJSONLWorkflowWithGeneratedStems(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty in jsonl mode", stderr.String())
+	}
+}
+
+func TestRunJSONLWorkflowWithRunSummary(t *testing.T) {
+	dir := t.TempDir()
+	summaryPath := filepath.Join(dir, "run-summary.json")
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-format", "jsonl",
+		"-run-summary", summaryPath,
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-candidate", "example",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty in jsonl mode", stderr.String())
+	}
+	var result match.CandidateResult
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &result); err != nil {
+		t.Fatalf("json.Unmarshal(stdout) error = %v", err)
+	}
+	if result.Candidate != "example" {
+		t.Fatalf("stdout result = %#v, want example", result)
+	}
+
+	data, err := os.ReadFile(summaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("json.Unmarshal(summary) error = %v\n%s", err, string(data))
+	}
+	if got["format"] != "jsonl" || got["total_checked_stems"] != float64(1) {
+		t.Fatalf("summary = %#v, want jsonl summary fields", got)
 	}
 }
 

@@ -110,6 +110,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-dry-run` prints the fully resolved generation contract and exits before any OpenAI call
 - `-generate-dry-run-format text|json` chooses human-readable or machine-readable inspection output
 - `-audit-log <path>` writes one audit JSONL record per checked stem
+- `-run-summary <path>` writes one machine-readable JSON summary object for the run
 - `generate.max_attempts` bounds how many attempts each batch gets to satisfy its target
 - `generate.retry_count` bounds transient API retries inside one attempt
 - Generated values are treated as stems, not FQDNs
@@ -192,6 +193,23 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - `report_emitted`
   - `interactive_emitted`
 - This is the durable machine-readable truth of what was checked during the run
+
+## Run summary artifact
+
+- `-run-summary <path>` creates or truncates one JSON file for the run
+- The run summary is separate from:
+  - the per-stem audit log
+  - the interactive stderr tape
+  - deterministic text or JSONL result output
+- It captures run-level context and outcomes, including:
+  - backend
+  - requested zones
+  - filter mode
+  - whether interactive mode was used
+  - final checked/emitted/strong-hit counts
+  - generation settings when generation was used
+  - aggregated generation diagnostics and rejection categories
+- Use it when you want one stable artifact per run for diffing, archiving, or comparing prompt/profile changes over time
 
 ## Interactive vs fallback text mode
 
@@ -313,6 +331,20 @@ go run ./cmd/domain-finder \
   -interactive \
   -interactive-hide-taken \
   -audit-log run.jsonl \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -candidate example \
+  -candidate missing
+```
+
+Manual run with a machine-readable run summary:
+
+```sh
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domain-finder \
+  -backend file \
+  -no-interactive \
+  -run-summary run-summary.json \
   -zone com=testdata/small/com.zone \
   -zone net=testdata/small/net.zone.slice \
   -candidate example \
@@ -463,6 +495,11 @@ generate:
   style: industrial infrastructure naming
   avoid_substrings: dev,code,stack,cloud,sync,ops,grid,craft,build,tool,lab,forge,flow
 ```
+
+The run summary JSON complements the audit log:
+
+- audit log: one JSONL record per checked stem
+- run summary: one JSON object per run
 
 PostgreSQL backend example:
 

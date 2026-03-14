@@ -22,6 +22,7 @@ available domains.
 - `internal/report`: filter modes and summary stats
 - `internal/output`: deterministic durable text and JSONL rendering
 - `internal/audit`: JSONL audit logging for one record per checked stem
+- `internal/runsummary`: one JSON artifact per run with resolved context and final counters
 - `internal/termui`: compact interactive stderr table rendering
 - `testdata/small`: tiny deterministic fixtures used by tests
 - `testdata/slices`: reserved for small realistic slices, never giant CZDS files
@@ -122,6 +123,7 @@ available domains.
   - `absent-in-all`
 - `internal/output` owns deterministic fallback/file rendering.
 - `internal/audit` owns durable machine-readable per-stem run logging.
+- `internal/runsummary` owns durable machine-readable per-run summary output.
 - `internal/termui` owns the compact streaming interactive table on `stderr`.
 - Interactive console prints:
   - a small startup header
@@ -137,6 +139,7 @@ available domains.
   - a compact final completion line
 - Interactive mode keeps the compact human-facing table on `stderr`; deterministic detailed output is preserved for non-interactive mode and `-out` files.
 - Audit logging is separate from both interactive and deterministic output paths, and records all checked stems whether or not they were visibly shown.
+- Run-summary output is separate from both audit logging and result output, and captures one structured run-level view of settings plus outcomes.
 - JSONL bypasses `termui` entirely.
 
 ## Current CLI capabilities
@@ -161,6 +164,7 @@ available domains.
 - `-no-interactive` forces deterministic fallback text mode.
 - `-interactive-hide-taken` suppresses durable `taken` rows only in interactive mode.
 - `-audit-log <path>` writes one JSONL audit record per checked stem.
+- `-run-summary <path>` writes one JSON summary object per run.
 - `-color` / `-no-color` control interactive ANSI styling.
 
 ## Testing rule
