@@ -486,7 +486,7 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 
 	fulfiller := openai.NewFulfiller(generator, cfg.Generate)
 	wrappedGenerationEvent := func(event openai.Event) error {
-		if event.Type == openai.EventBatchResult && event.Err == nil {
+		if event.Type == openai.EventBatchRequest || event.Type == openai.EventBatchResult || event.Type == openai.EventRetry {
 			event.Stop = stopController.Snapshot()
 		}
 		if (event.Type == openai.EventComplete || event.Type == openai.EventFailed) && stop != nil {
@@ -755,36 +755,30 @@ func renderGenerationEvent(event openai.Event) string {
 	case openai.EventBatchRequest:
 		line := fmt.Sprintf("generation: batch %d attempt %d requesting %d stems", event.Batch, event.Attempt, event.Requested)
 		line += renderAdaptiveBatchSize(event)
+		line += renderLiveProgress(event)
 		return line
 	case openai.EventBatchResult:
 		if event.Err != nil && openai.IsQuality(event.Err) {
-			return fmt.Sprintf("generation: batch %d attempt %d produced unusable output, need %d more", event.Batch, event.Attempt, event.RemainingBatch)
+			line := fmt.Sprintf("generation: batch %d attempt %d produced unusable output, need %d more", event.Batch, event.Attempt, event.RemainingBatch)
+			line += renderAdaptiveBatchSize(event)
+			line += renderLiveProgress(event)
+			return line
 		}
 		line := fmt.Sprintf("generation: batch %d attempt %d accepted %d, invalid %d, banned %d, quality_rejected %d, duplicates %d, need %d more", event.Batch, event.Attempt, event.Accepted, event.Invalid, event.Banned, event.QualityRejected, event.Duplicates, event.RemainingBatch)
 		if event.Underfilled > 0 {
 			line += fmt.Sprintf(" | underfilled %d", event.Underfilled)
 		}
 		line += renderAdaptiveBatchSize(event)
-		if event.Usage != nil {
-			if event.LastEstimate.PricingAvailable {
-				line += fmt.Sprintf(" | last %s | total %s", openai.FormatCostUSD(event.LastEstimate.CostUSD), openai.FormatCostUSD(event.Totals.EstimatedCostUSD))
-			} else {
-				line += " | pricing unavailable"
-			}
-		}
-		line += renderStopProgress(event.Stop)
+		line += renderLiveProgress(event)
 		return line
 	case openai.EventRetry:
-		return fmt.Sprintf("generation: retrying batch %d attempt %d (%d/%d) after transient error", event.Batch, event.Attempt, event.Retry, event.RetryCount)
+		line := fmt.Sprintf("generation: retrying batch %d attempt %d (%d/%d) after transient error", event.Batch, event.Attempt, event.Retry, event.RetryCount)
+		line += renderAdaptiveBatchSize(event)
+		line += renderLiveProgress(event)
+		return line
 	case openai.EventComplete:
 		line := fmt.Sprintf("generation: complete, accepted %d stems", event.Accepted)
-		if event.Totals.HasUsage() {
-			if event.Totals.PricingAvailable {
-				line += fmt.Sprintf(" | total %s", openai.FormatCostUSD(event.Totals.EstimatedCostUSD))
-			} else {
-				line += " | pricing unavailable"
-			}
-		}
+		line += renderLiveProgress(event)
 		if event.Stop.Reason != "" {
 			line += fmt.Sprintf(" | stop %s", openai.StopReasonLabel(event.Stop.Reason))
 		}
@@ -816,25 +810,55 @@ func renderAdaptiveBatchSize(event openai.Event) string {
 	return ""
 }
 
-func renderStopProgress(stop openai.StopSnapshot) string {
-	parts := make([]string, 0, 3)
-	if stop.TargetStrongHits > 0 {
-		parts = append(parts, fmt.Sprintf("strong %d/%d", stop.StrongHits, stop.TargetStrongHits))
+func renderLiveProgress(event openai.Event) string {
+	parts := make([]string, 0, 4)
+	if stopPart := renderStopProgress(event.Stop); stopPart != "" {
+		parts = append(parts, stopPart)
 	}
-	if stop.MaxStallBatches > 0 {
-		parts = append(parts, fmt.Sprintf("stall %d/%d", stop.StallBatches, stop.MaxStallBatches))
+	if costPart := renderTotalCostProgress(event); costPart != "" {
+		parts = append(parts, costPart)
 	}
-	if stop.MaxCostUSD > 0 {
-		if stop.PricingAvailable {
-			parts = append(parts, fmt.Sprintf("cost %s/%.2f", openai.FormatCostUSD(stop.EstimatedCostUSD), stop.MaxCostUSD))
-		} else {
-			parts = append(parts, "cost pricing unavailable")
+	if event.Usage != nil {
+		if event.LastEstimate.PricingAvailable {
+			parts = append(parts, fmt.Sprintf("last %s", openai.FormatCostUSD(event.LastEstimate.CostUSD)))
+		} else if event.Stop.MaxCostUSD == 0 && !event.Stop.PricingAvailable {
+			parts = append(parts, "pricing unavailable")
 		}
 	}
 	if len(parts) == 0 {
 		return ""
 	}
 	return " | " + strings.Join(parts, " | ")
+}
+
+func renderStopProgress(stop openai.StopSnapshot) string {
+	parts := make([]string, 0, 2)
+	if stop.TargetStrongHits > 0 {
+		parts = append(parts, fmt.Sprintf("strong %d/%d", stop.StrongHits, stop.TargetStrongHits))
+	}
+	if stop.MaxStallBatches > 0 {
+		parts = append(parts, fmt.Sprintf("stall %d/%d", stop.StallBatches, stop.MaxStallBatches))
+	}
+	return strings.Join(parts, " | ")
+}
+
+func renderTotalCostProgress(event openai.Event) string {
+	label := "cost"
+	if event.Type == openai.EventBatchResult || event.Type == openai.EventComplete {
+		label = "total"
+	}
+	switch {
+	case event.Stop.MaxCostUSD > 0 && event.Stop.PricingAvailable:
+		return fmt.Sprintf("%s %s/%.2f", label, openai.FormatCostUSD(event.Stop.EstimatedCostUSD), event.Stop.MaxCostUSD)
+	case event.Stop.MaxCostUSD > 0 && !event.Stop.PricingAvailable:
+		return "cost pricing unavailable"
+	case event.Stop.PricingAvailable:
+		return fmt.Sprintf("%s %s", label, openai.FormatCostUSD(event.Stop.EstimatedCostUSD))
+	case event.Totals.PricingAvailable:
+		return fmt.Sprintf("%s %s", label, openai.FormatCostUSD(event.Totals.EstimatedCostUSD))
+	default:
+		return ""
+	}
 }
 
 func stopReason(stop *openai.StopSnapshot) openai.StopReason {

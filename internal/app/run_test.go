@@ -798,9 +798,9 @@ func TestRunTextWorkflowWithGeneratedStems(t *testing.T) {
 	progress := stderr.String()
 	wantProgress := []string{
 		"generation: batch 1 attempt 1 requesting 2 stems",
-		"generation: batch 1 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more | last $0.000026 | total $0.000026",
+		"generation: batch 1 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more | total $0.000026 | last $0.000026",
 		"generation: batch 2 attempt 1 requesting 2 stems",
-		"generation: batch 2 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more | last $0.000019 | total $0.000045",
+		"generation: batch 2 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more | total $0.000045 | last $0.000019",
 		"generation: complete, accepted 4 stems | total $0.000045",
 		"generation usage",
 		"  model: gpt-4o-mini",
@@ -993,8 +993,9 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 	if len(generator.calls) != 2 || generator.calls[0] != 2 || generator.calls[1] != 2 {
 		t.Fatalf("generator calls = %#v, want [2 2]", generator.calls)
 	}
-	if !strings.Contains(stderr.String(), "generation: complete, accepted 4 stems | stop strong-hit target reached") {
-		t.Fatalf("stderr = %q, want stop-aware generation completion", stderr.String())
+	progress := stderr.String()
+	if !strings.Contains(progress, "generation: complete, accepted 4 stems") || !strings.Contains(progress, "stop strong-hit target reached") {
+		t.Fatalf("stderr = %q, want stop-aware generation completion", progress)
 	}
 }
 
@@ -1780,6 +1781,105 @@ func TestRenderGenerationUsageLinesPricingUnavailable(t *testing.T) {
 		if !strings.Contains(joined, fragment) {
 			t.Fatalf("renderGenerationUsageLines() missing %q:\n%s", fragment, joined)
 		}
+	}
+}
+
+func TestRenderGenerationEventRequestIncludesLiveProgress(t *testing.T) {
+	line := renderGenerationEvent(openai.Event{
+		Type:               openai.EventBatchRequest,
+		Batch:              22,
+		Attempt:            2,
+		Requested:          1,
+		BaseBatchSize:      8,
+		EffectiveBatchSize: 2,
+		Stop: openai.StopSnapshot{
+			StrongHits:       5,
+			TargetStrongHits: 20,
+			StallBatches:     1,
+			MaxStallBatches:  8,
+			PricingAvailable: true,
+			EstimatedCostUSD: 0.0142,
+			MaxCostUSD:       1.00,
+		},
+	})
+
+	for _, fragment := range []string{
+		"generation: batch 22 attempt 2 requesting 1 stems",
+		"batch_size 8->2",
+		"strong 5/20",
+		"stall 1/8",
+		"cost $0.014200/1.00",
+	} {
+		if !strings.Contains(line, fragment) {
+			t.Fatalf("renderGenerationEvent(request) missing %q:\n%s", fragment, line)
+		}
+	}
+}
+
+func TestRenderGenerationEventLaterUpdatesKeepCostAndProgress(t *testing.T) {
+	resultLine := renderGenerationEvent(openai.Event{
+		Type:               openai.EventBatchResult,
+		Batch:              22,
+		Attempt:            1,
+		Accepted:           1,
+		Invalid:            0,
+		Banned:             0,
+		QualityRejected:    0,
+		Duplicates:         2,
+		RemainingBatch:     0,
+		BaseBatchSize:      8,
+		EffectiveBatchSize: 2,
+		Usage:              &openai.Usage{InputTokens: 100, OutputTokens: 10},
+		LastEstimate: openai.UsageEstimate{
+			Model:            "gpt-4o-mini",
+			PricingAvailable: true,
+			CostUSD:          0.000021,
+		},
+		Totals: openai.UsageTotals{
+			Model:            "gpt-4o-mini",
+			PricingAvailable: true,
+			EstimatedCostUSD: 0.0142,
+		},
+		Stop: openai.StopSnapshot{
+			StrongHits:       5,
+			TargetStrongHits: 20,
+			StallBatches:     1,
+			MaxStallBatches:  8,
+			PricingAvailable: true,
+			EstimatedCostUSD: 0.0142,
+			MaxCostUSD:       1.00,
+		},
+	})
+	requestLine := renderGenerationEvent(openai.Event{
+		Type:               openai.EventBatchRequest,
+		Batch:              22,
+		Attempt:            2,
+		Requested:          1,
+		BaseBatchSize:      8,
+		EffectiveBatchSize: 2,
+		Stop: openai.StopSnapshot{
+			StrongHits:       5,
+			TargetStrongHits: 20,
+			StallBatches:     1,
+			MaxStallBatches:  8,
+			PricingAvailable: true,
+			EstimatedCostUSD: 0.0142,
+			MaxCostUSD:       1.00,
+		},
+	})
+
+	for _, line := range []string{resultLine, requestLine} {
+		for _, fragment := range []string{"strong 5/20", "stall 1/8"} {
+			if !strings.Contains(line, fragment) {
+				t.Fatalf("renderGenerationEvent() missing %q:\n%s", fragment, line)
+			}
+		}
+	}
+	if !strings.Contains(requestLine, "cost $0.014200/1.00") {
+		t.Fatalf("request line = %q, want cumulative cost retained on request updates", requestLine)
+	}
+	if !strings.Contains(resultLine, "last $0.000021") || !strings.Contains(resultLine, "total $0.014200/1.00") {
+		t.Fatalf("result line = %q, want last-call cost retained on result events", resultLine)
 	}
 }
 
