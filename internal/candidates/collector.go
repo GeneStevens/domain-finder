@@ -6,6 +6,13 @@ type Collector struct {
 	seen map[string]struct{}
 }
 
+// BatchReport describes one tolerant candidate-ingest pass.
+type BatchReport struct {
+	Accepted   []string
+	Invalid    int
+	Duplicates int
+}
+
 // NewCollector creates an empty collector.
 func NewCollector() *Collector {
 	return &Collector{seen: make(map[string]struct{})}
@@ -37,4 +44,39 @@ func (c *Collector) AddAll(raws []string) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// AddAllReport adds many raw candidates and reports accepted, invalid, and
+// duplicate values without failing the whole batch on invalid generated output.
+func (c *Collector) AddAllReport(raws []string) BatchReport {
+	return c.AddAllReportLimited(raws, len(raws))
+}
+
+// AddAllReportLimited behaves like AddAllReport but caps new accepted stems at
+// the provided limit so bounded generation can avoid overshooting requested work.
+func (c *Collector) AddAllReportLimited(raws []string, limit int) BatchReport {
+	report := BatchReport{
+		Accepted: make([]string, 0, len(raws)),
+	}
+	if limit < 0 {
+		limit = 0
+	}
+	for _, raw := range raws {
+		normalized, err := NormalizeCandidate(raw)
+		if err != nil {
+			report.Invalid++
+			continue
+		}
+		if _, ok := c.seen[normalized]; ok {
+			report.Duplicates++
+			continue
+		}
+		if len(report.Accepted) >= limit {
+			report.Duplicates++
+			continue
+		}
+		c.seen[normalized] = struct{}{}
+		report.Accepted = append(report.Accepted, normalized)
+	}
+	return report
 }

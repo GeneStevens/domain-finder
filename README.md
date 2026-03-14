@@ -73,10 +73,24 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-count` sets the total requested stem count
 - `-generate-batch-size` sets the per-request batch size
 - `-generate-model` overrides the configured OpenAI model
+- `generate.max_attempts` bounds how many attempts each batch gets to satisfy its target
+- `generate.retry_count` bounds transient API retries inside one attempt
 - Generated values are treated as stems, not FQDNs
 - Generated batches are normalized and deduped through `internal/candidates`
 - Manual, file, stdin, and generated stems can all be used together
 - Matching still composes `<stem>.<zone>` internally
+
+## Hardened generation behavior
+
+- Each requested batch now has a bounded fulfillment policy:
+  - request the batch target
+  - normalize and dedupe through the existing stem pipeline
+  - if too few usable new stems survive, try again for the remainder
+  - stop with a clear error when the attempt budget is exhausted
+- Transient OpenAI failures such as rate limits or server errors are retried a bounded number of times
+- Poor model output such as duplicates, FQDNs, punctuation, empty values, or noisy text is treated as degraded batch quality rather than silently corrupting the candidate pipeline
+- Interactive and text-mode generation runs emit concise stderr status lines showing batch requests, accepted/rejected counts, retries, and completion/failure
+- JSONL mode stays machine-readable and does not emit live generation progress
 
 ## Interactive vs fallback text mode
 
@@ -169,6 +183,13 @@ go run ./cmd/domain-finder \
   -generate-count 6 \
   -generate-batch-size 3
 ```
+
+Typical operator feedback during generation:
+
+- `generation: batch 1 attempt 1 requesting 3 stems`
+- `generation: batch 1 attempt 1 accepted 2, invalid 1, duplicates 0, need 1 more`
+- `generation: retrying batch 1 attempt 2 (1/2) after transient error`
+- `generation: complete, accepted 6 stems`
 
 This still reports only exact presence or absence in loaded zone files. It is
 not a registrar availability check. OpenAI generation produces candidate stems

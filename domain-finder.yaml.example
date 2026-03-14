@@ -4,3 +4,5 @@ openai:
 generate:
   count: 20
   batch_size: 10
+  max_attempts: 3
+  retry_count: 2

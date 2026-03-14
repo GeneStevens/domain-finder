@@ -77,6 +77,9 @@ available domains.
   - generation happens in batches
   - each batch is normalized, deduped, and processed before the next batch
   - generated outputs must be stems only, not FQDNs
+  - each batch has bounded fulfillment attempts
+  - transient API failures have bounded retries inside one attempt
+  - degraded model output is rejected without contaminating the candidate set
 
 ## Result model
 
@@ -108,6 +111,7 @@ available domains.
 - `-candidate-stdin` loads stems from stdin.
 - `-generate <prompt>` requests OpenAI-generated stems.
 - `-generate-count`, `-generate-batch-size`, and `-generate-model` override generation config.
+- `generate.max_attempts` and `generate.retry_count` harden generation behavior from YAML/env config.
 - `-format text|jsonl` selects a human-readable or machine-readable output mode.
 - `-filter all|absent-in-all` controls which results are emitted.
 - `-out <path>` writes durable output to a file instead of stdout.

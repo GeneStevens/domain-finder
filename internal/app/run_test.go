@@ -21,18 +21,23 @@ func fixturePath(parts ...string) string {
 }
 
 type fakeStemGenerator struct {
-	batches [][]string
-	calls   []int
+	responses []fakeStemResponse
+	calls     []int
+}
+
+type fakeStemResponse struct {
+	stems []string
+	err   error
 }
 
 func (f *fakeStemGenerator) GenerateBatch(_ context.Context, _ string, count int) ([]string, error) {
 	f.calls = append(f.calls, count)
-	if len(f.batches) == 0 {
+	if len(f.responses) == 0 {
 		return nil, fmt.Errorf("unexpected GenerateBatch call")
 	}
-	batch := f.batches[0]
-	f.batches = f.batches[1:]
-	return batch, nil
+	response := f.responses[0]
+	f.responses = f.responses[1:]
+	return response.stems, response.err
 }
 
 func TestRunTextWorkflowFallsBackWhenNotInteractive(t *testing.T) {
@@ -271,9 +276,9 @@ func TestRunTextWorkflowWithGeneratedStems(t *testing.T) {
 	}
 
 	generator := &fakeStemGenerator{
-		batches: [][]string{
-			{"brandfoo", "missing"},
-			{"example", "noviq"},
+		responses: []fakeStemResponse{
+			{stems: []string{"brandfoo", "noviq"}},
+			{stems: []string{"example", "trynex"}},
 		},
 	}
 
@@ -308,24 +313,38 @@ func TestRunTextWorkflowWithGeneratedStems(t *testing.T) {
 		"  summary: absent in all loaded zones\n" +
 		"  com: absent\n" +
 		"  net: absent\n" +
-		"example\n" +
-		"  summary: present in at least one loaded zone\n" +
-		"  com: present\n" +
-		"  net: present\n" +
 		"noviq\n" +
 		"  summary: absent in all loaded zones\n" +
 		"  com: absent\n" +
 		"  net: absent\n" +
+		"example\n" +
+		"  summary: present in at least one loaded zone\n" +
+		"  com: present\n" +
+		"  net: present\n" +
+		"trynex\n" +
+		"  summary: absent in all loaded zones\n" +
+		"  com: absent\n" +
+		"  net: absent\n" +
 		"summary\n" +
-		"  total_candidates: 4\n" +
-		"  emitted_results: 4\n" +
+		"  total_candidates: 5\n" +
+		"  emitted_results: 5\n" +
 		"  present_in_any: 1\n" +
-		"  absent_in_all: 3\n"
+		"  absent_in_all: 4\n"
 	if stdout.String() != want {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), want)
 	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty in fallback text mode", stderr.String())
+	progress := stderr.String()
+	wantProgress := []string{
+		"generation: batch 1 attempt 1 requesting 2 stems",
+		"generation: batch 1 attempt 1 accepted 2, invalid 0, duplicates 0, need 0 more",
+		"generation: batch 2 attempt 1 requesting 2 stems",
+		"generation: batch 2 attempt 1 accepted 2, invalid 0, duplicates 0, need 0 more",
+		"generation: complete, accepted 4 stems",
+	}
+	for _, fragment := range wantProgress {
+		if !strings.Contains(progress, fragment) {
+			t.Fatalf("stderr missing %q:\n%s", fragment, progress)
+		}
 	}
 	if len(generator.calls) != 2 || generator.calls[0] != 2 || generator.calls[1] != 2 {
 		t.Fatalf("generator calls = %#v, want [2 2]", generator.calls)
@@ -339,9 +358,9 @@ func TestRunTextWorkflowInteractiveWithGeneratedStems(t *testing.T) {
 	}
 
 	generator := &fakeStemGenerator{
-		batches: [][]string{
-			{"brandfoo", "example"},
-			{"noviq"},
+		responses: []fakeStemResponse{
+			{stems: []string{"brandfoo", "example"}},
+			{stems: []string{"noviq"}},
 		},
 	}
 
@@ -394,6 +413,11 @@ func TestRunTextWorkflowInteractiveWithGeneratedStems(t *testing.T) {
 	progress := stderr.String()
 	wantProgress := []string{
 		"Searching 4 domains | filter: absent-in-all\n",
+		"generation: batch 1 attempt 1 requesting 2 stems",
+		"generation: batch 1 attempt 1 accepted 2, invalid 0, duplicates 0, need 0 more",
+		"generation: batch 2 attempt 1 requesting 1 stems",
+		"generation: batch 2 attempt 1 accepted 1, invalid 0, duplicates 0, need 0 more",
+		"generation: complete, accepted 3 stems",
 		"> [1/4] missing",
 		"> [2/4] brandfoo",
 		"> [3/4] example",
@@ -417,9 +441,9 @@ func TestRunJSONLWorkflowWithGeneratedStems(t *testing.T) {
 	}
 
 	generator := &fakeStemGenerator{
-		batches: [][]string{
-			{"example"},
-			{"noviq"},
+		responses: []fakeStemResponse{
+			{stems: []string{"example"}},
+			{stems: []string{"noviq"}},
 		},
 	}
 
@@ -463,5 +487,119 @@ func TestRunJSONLWorkflowWithGeneratedStems(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty in jsonl mode", stderr.String())
+	}
+}
+
+func TestRunTextWorkflowWithDegradedGeneratedBatch(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  max_attempts: 3\n  retry_count: 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		responses: []fakeStemResponse{
+			{stems: []string{"missing", "bad.name"}},
+			{stems: []string{"noviq", "trynex"}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-candidate", "missing",
+		"-generate", "short invented brand stems",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	wantStdout := "" +
+		"missing\n" +
+		"  summary: absent in all loaded zones\n" +
+		"  com: absent\n" +
+		"  net: absent\n" +
+		"noviq\n" +
+		"  summary: absent in all loaded zones\n" +
+		"  com: absent\n" +
+		"  net: absent\n" +
+		"trynex\n" +
+		"  summary: absent in all loaded zones\n" +
+		"  com: absent\n" +
+		"  net: absent\n" +
+		"summary\n" +
+		"  total_candidates: 3\n" +
+		"  emitted_results: 3\n" +
+		"  present_in_any: 0\n" +
+		"  absent_in_all: 3\n"
+	if stdout.String() != wantStdout {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), wantStdout)
+	}
+
+	progress := stderr.String()
+	wantProgress := []string{
+		"generation: batch 1 attempt 1 requesting 2 stems",
+		"generation: batch 1 attempt 1 accepted 0, invalid 1, duplicates 1, need 2 more",
+		"generation: batch 1 attempt 2 requesting 2 stems",
+		"generation: batch 1 attempt 2 accepted 2, invalid 0, duplicates 0, need 0 more",
+		"generation: complete, accepted 2 stems",
+	}
+	for _, fragment := range wantProgress {
+		if !strings.Contains(progress, fragment) {
+			t.Fatalf("stderr missing %q:\n%s", fragment, progress)
+		}
+	}
+}
+
+func TestRunTextWorkflowGeneratedFailureReportsClearly(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  max_attempts: 2\n  retry_count: 0\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		responses: []fakeStemResponse{
+			{stems: []string{"missing", "bad.name"}},
+			{stems: []string{"missing", "still bad"}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-candidate", "missing",
+		"-generate", "short invented brand stems",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err == nil {
+		t.Fatal("Run() error = nil, want generation failure")
+	}
+	if !strings.Contains(err.Error(), "generation produced 0 usable stems out of 2 requested") {
+		t.Fatalf("error = %v, want bounded fulfillment failure", err)
+	}
+	if !strings.Contains(stderr.String(), "generation: failed after accepting 0 of 2 requested stems") {
+		t.Fatalf("stderr = %q, want clear failure notice", stderr.String())
 	}
 }

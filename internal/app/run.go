@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -127,9 +128,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		if termui.ShouldUseInteractive(*format, *forceInteractive, *noInteractive, stderr, stderrIsTTY) {
 			return runInteractiveTextMode(context.Background(), multi, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, writer, stderr)
 		}
-		return runDeterministicTextMode(context.Background(), multi, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, writer)
+		return runDeterministicTextMode(context.Background(), multi, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, writer, stderr)
 	case "jsonl":
-		allResults, filteredResults, err := processCandidates(context.Background(), multi, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, nil)
+		allResults, filteredResults, err := processCandidates(context.Background(), multi, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, nil, nil)
 		if err != nil {
 			return err
 		}
@@ -140,8 +141,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	}
 }
 
-func runDeterministicTextMode(ctx context.Context, multi *index.Multi, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter io.Writer) error {
-	allResults, filteredResults, err := processCandidates(ctx, multi, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, nil)
+func runDeterministicTextMode(ctx context.Context, multi *index.Multi, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, statusWriter io.Writer) error {
+	allResults, filteredResults, err := processCandidates(ctx, multi, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, nil, makeGenerationNotifier(statusWriter))
 	if err != nil {
 		return err
 	}
@@ -170,6 +171,8 @@ func runInteractiveTextMode(ctx context.Context, multi *index.Multi, initialCand
 			return err
 		}
 		return output.WriteTextResult(resultWriter, event.Result)
+	}, func(event openai.Event) error {
+		return console.Note(renderGenerationEvent(event))
 	})
 	if err != nil {
 		return err
@@ -189,7 +192,7 @@ type progressEvent struct {
 	Emitted   bool
 }
 
-func processCandidates(ctx context.Context, multi *index.Multi, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, onProgress func(progressEvent) error) ([]match.CandidateResult, []match.CandidateResult, error) {
+func processCandidates(ctx context.Context, multi *index.Multi, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, onProgress func(progressEvent) error, onGenerationEvent func(openai.Event) error) ([]match.CandidateResult, []match.CandidateResult, error) {
 	allResults := make([]match.CandidateResult, 0, len(initialCandidates))
 	emittedResults := make([]match.CandidateResult, 0, len(initialCandidates))
 	processedCount := 0
@@ -225,27 +228,60 @@ func processCandidates(ctx context.Context, multi *index.Multi, initialCandidate
 		return allResults, emittedResults, nil
 	}
 
-	remaining := cfg.Generate.Count
-	for remaining > 0 {
-		batchSize := cfg.Generate.BatchSize
-		if batchSize <= 0 || batchSize > remaining {
-			batchSize = remaining
+	fulfiller := openai.NewFulfiller(generator, cfg.Generate)
+	err := fulfiller.Fulfill(ctx, generatePrompt, cfg.Generate.Count, func(rawBatch []string, limit int) (candidates.BatchReport, error) {
+		report := collector.AddAllReportLimited(rawBatch, limit)
+		if err := processBatch(report.Accepted); err != nil {
+			return candidates.BatchReport{}, err
 		}
-		rawBatch, err := generator.GenerateBatch(ctx, generatePrompt, batchSize)
-		if err != nil {
-			return nil, nil, err
-		}
-		newCandidates, err := collector.AddAll(rawBatch)
-		if err != nil {
-			return nil, nil, err
-		}
-		if err := processBatch(newCandidates); err != nil {
-			return nil, nil, err
-		}
-		remaining -= batchSize
+		return report, nil
+	}, onGenerationEvent)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	return allResults, emittedResults, nil
+}
+
+func makeGenerationNotifier(w io.Writer) func(openai.Event) error {
+	if w == nil {
+		return nil
+	}
+	return func(event openai.Event) error {
+		line := renderGenerationEvent(event)
+		if line == "" {
+			return nil
+		}
+		_, err := fmt.Fprintln(w, line)
+		return err
+	}
+}
+
+func renderGenerationEvent(event openai.Event) string {
+	switch event.Type {
+	case openai.EventBatchRequest:
+		return fmt.Sprintf("generation: batch %d attempt %d requesting %d stems", event.Batch, event.Attempt, event.Requested)
+	case openai.EventBatchResult:
+		if event.Err != nil && openai.IsQuality(event.Err) {
+			return fmt.Sprintf("generation: batch %d attempt %d produced unusable output, need %d more", event.Batch, event.Attempt, event.RemainingBatch)
+		}
+		return fmt.Sprintf("generation: batch %d attempt %d accepted %d, invalid %d, duplicates %d, need %d more", event.Batch, event.Attempt, event.Accepted, event.Invalid, event.Duplicates, event.RemainingBatch)
+	case openai.EventRetry:
+		return fmt.Sprintf("generation: retrying batch %d attempt %d (%d/%d) after transient error", event.Batch, event.Attempt, event.Retry, event.RetryCount)
+	case openai.EventComplete:
+		return fmt.Sprintf("generation: complete, accepted %d stems", event.Accepted)
+	case openai.EventFailed:
+		if event.Err == nil {
+			return "generation: failed"
+		}
+		var fulfillmentErr *openai.FulfillmentError
+		if errors.As(event.Err, &fulfillmentErr) {
+			return fmt.Sprintf("generation: failed after accepting %d of %d requested stems", fulfillmentErr.Accepted, fulfillmentErr.Requested)
+		}
+		return fmt.Sprintf("generation: failed: %v", event.Err)
+	default:
+		return ""
+	}
 }
 
 type zoneFlag map[string]string

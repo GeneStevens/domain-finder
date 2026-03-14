@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -43,5 +44,52 @@ func TestGenerateBatch(t *testing.T) {
 	}
 	if len(got) != 2 || got[0] != "brandfoo" || got[1] != "noviq" {
 		t.Fatalf("GenerateBatch() = %#v, want [brandfoo noviq]", got)
+	}
+}
+
+func TestGenerateBatchInvalidTopLevelJSON(t *testing.T) {
+	client := &Client{
+		APIKey:  "test-key",
+		Model:   "gpt-4o-mini",
+		BaseURL: "https://example.invalid/v1/chat/completions",
+		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`not json at all`)),
+			}, nil
+		})},
+	}
+
+	_, err := client.GenerateBatch(context.Background(), "developer tools", 2)
+	if err == nil {
+		t.Fatal("GenerateBatch() error = nil, want protocol error")
+	}
+	var genErr *GenerationError
+	if !errors.As(err, &genErr) || genErr.Kind != ErrorProtocol {
+		t.Fatalf("GenerateBatch() error = %v, want protocol error", err)
+	}
+}
+
+func TestGenerateBatchSalvagesNoisyOutput(t *testing.T) {
+	client := &Client{
+		APIKey:  "test-key",
+		Model:   "gpt-4o-mini",
+		BaseURL: "https://example.invalid/v1/chat/completions",
+		HTTP: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{"choices":[{"message":{"content":"Here are ideas:\n1. brandfoo\n2. invalid stem\n3. noviq.com\n4. trynex"}}]}`)),
+			}, nil
+		})},
+	}
+
+	got, err := client.GenerateBatch(context.Background(), "developer tools", 4)
+	if err != nil {
+		t.Fatalf("GenerateBatch() error = %v", err)
+	}
+	if len(got) != 5 || got[0] != "Here are ideas:" || got[1] != "brandfoo" || got[4] != "trynex" {
+		t.Fatalf("GenerateBatch() = %#v, want salvaged loose lines", got)
 	}
 }

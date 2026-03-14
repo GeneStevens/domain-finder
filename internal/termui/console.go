@@ -119,6 +119,19 @@ func (c *Console) Finish(summary report.Summary) error {
 	return err
 }
 
+// Note writes a durable status line to the console without leaving the active
+// line smeared across the terminal.
+func (c *Console) Note(line string) error {
+	if err := c.ClearActive(); err != nil {
+		return err
+	}
+	if c == nil || c.w == nil {
+		return nil
+	}
+	_, err := fmt.Fprintln(c.w, line)
+	return err
+}
+
 func (c *Console) rewrite(line string) error {
 	padding := ""
 	if c.lastLen > len(line) {

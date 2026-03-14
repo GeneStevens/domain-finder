@@ -26,8 +26,10 @@ type OpenAIConfig struct {
 }
 
 type GenerateConfig struct {
-	Count     int
-	BatchSize int
+	Count               int
+	BatchSize           int
+	MaxAttemptsPerBatch int
+	RetryCount          int
 }
 
 // CLIOverrides are the CLI-provided config overrides.
@@ -38,10 +40,12 @@ type CLIOverrides struct {
 }
 
 type fileConfig struct {
-	OpenAIAPIKey      string
-	OpenAIModel       string
-	GenerateCount     int
-	GenerateBatchSize int
+	OpenAIAPIKey        string
+	OpenAIModel         string
+	GenerateCount       int
+	GenerateBatchSize   int
+	GenerateMaxAttempts int
+	GenerateRetryCount  int
 }
 
 // Load resolves configuration using precedence:
@@ -52,8 +56,10 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 			Model: "gpt-4o-mini",
 		},
 		Generate: GenerateConfig{
-			Count:     20,
-			BatchSize: 10,
+			Count:               20,
+			BatchSize:           10,
+			MaxAttemptsPerBatch: 3,
+			RetryCount:          2,
 		},
 	}
 
@@ -92,6 +98,20 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 		}
 		cfg.Generate.BatchSize = parsed
 	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_MAX_ATTEMPTS"); ok && value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_MAX_ATTEMPTS: %w", err)
+		}
+		cfg.Generate.MaxAttemptsPerBatch = parsed
+	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_RETRY_COUNT"); ok && value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_RETRY_COUNT: %w", err)
+		}
+		cfg.Generate.RetryCount = parsed
+	}
 
 	if cli.OpenAIModel != "" {
 		cfg.OpenAI.Model = cli.OpenAIModel
@@ -119,6 +139,12 @@ func applyFileConfig(cfg *Config, fc fileConfig) {
 	if fc.GenerateBatchSize > 0 {
 		cfg.Generate.BatchSize = fc.GenerateBatchSize
 	}
+	if fc.GenerateMaxAttempts > 0 {
+		cfg.Generate.MaxAttemptsPerBatch = fc.GenerateMaxAttempts
+	}
+	if fc.GenerateRetryCount >= 0 {
+		cfg.Generate.RetryCount = fc.GenerateRetryCount
+	}
 }
 
 func loadFile(path string) (fileConfig, error) {
@@ -132,7 +158,10 @@ func loadFile(path string) (fileConfig, error) {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	var cfg fileConfig
+	cfg := fileConfig{
+		GenerateMaxAttempts: -1,
+		GenerateRetryCount:  -1,
+	}
 	section := ""
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -167,6 +196,18 @@ func loadFile(path string) (fileConfig, error) {
 				return fileConfig{}, fmt.Errorf("parse %s generate.batch_size: %w", path, err)
 			}
 			cfg.GenerateBatchSize = parsed
+		case "generate.max_attempts":
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return fileConfig{}, fmt.Errorf("parse %s generate.max_attempts: %w", path, err)
+			}
+			cfg.GenerateMaxAttempts = parsed
+		case "generate.retry_count":
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return fileConfig{}, fmt.Errorf("parse %s generate.retry_count: %w", path, err)
+			}
+			cfg.GenerateRetryCount = parsed
 		default:
 			return fileConfig{}, fmt.Errorf("parse config %q: unknown key %s.%s", path, section, key)
 		}

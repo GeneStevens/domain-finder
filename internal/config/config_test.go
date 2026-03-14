@@ -11,14 +11,15 @@ func TestLoadPrecedence(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, baseConfigName), []byte("openai:\n  model: base-model\ngenerate:\n  count: 5\n  batch_size: 2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, localConfigName), []byte("openai:\n  api_key: local-key\n  model: local-model\ngenerate:\n  count: 7\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, localConfigName), []byte("openai:\n  api_key: local-key\n  model: local-model\ngenerate:\n  count: 7\n  max_attempts: 4\n  retry_count: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	env := map[string]string{
-		"OPENAI_API_KEY":                   "env-key",
-		"DOMAINFINDER_OPENAI_MODEL":        "env-model",
-		"DOMAINFINDER_GENERATE_BATCH_SIZE": "4",
+		"OPENAI_API_KEY":                    "env-key",
+		"DOMAINFINDER_OPENAI_MODEL":         "env-model",
+		"DOMAINFINDER_GENERATE_BATCH_SIZE":  "4",
+		"DOMAINFINDER_GENERATE_RETRY_COUNT": "5",
 	}
 	cfg, err := Load(dir, func(key string) (string, bool) {
 		value, ok := env[key]
@@ -43,6 +44,12 @@ func TestLoadPrecedence(t *testing.T) {
 	}
 	if cfg.Generate.BatchSize != 6 {
 		t.Fatalf("Generate.BatchSize = %d, want 6", cfg.Generate.BatchSize)
+	}
+	if cfg.Generate.MaxAttemptsPerBatch != 4 {
+		t.Fatalf("Generate.MaxAttemptsPerBatch = %d, want 4", cfg.Generate.MaxAttemptsPerBatch)
+	}
+	if cfg.Generate.RetryCount != 5 {
+		t.Fatalf("Generate.RetryCount = %d, want 5", cfg.Generate.RetryCount)
 	}
 }
 
