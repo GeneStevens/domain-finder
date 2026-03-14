@@ -19,7 +19,7 @@ const chatCompletionsURL = "https://api.openai.com/v1/chat/completions"
 
 // StemGenerator produces candidate stem batches.
 type StemGenerator interface {
-	GenerateBatch(ctx context.Context, prompt string, count int) ([]string, error)
+	GenerateBatch(ctx context.Context, prompt string, count int) (BatchResult, error)
 }
 
 // Client is a minimal OpenAI Chat Completions client for batch stem generation.
@@ -30,6 +30,10 @@ type Client struct {
 	HTTP     *http.Client
 	Builder  PromptBuilder
 	Generate config.GenerateConfig
+}
+
+func (c *Client) ModelName() string {
+	return c.Model
 }
 
 // NewClient creates a configured client from resolved config.
@@ -48,7 +52,7 @@ func NewClient(cfg config.Config) (*Client, error) {
 }
 
 // GenerateBatch requests one batch of candidate stems.
-func (c *Client) GenerateBatch(ctx context.Context, prompt string, count int) ([]string, error) {
+func (c *Client) GenerateBatch(ctx context.Context, prompt string, count int) (BatchResult, error) {
 	type message struct {
 		Role    string `json:"role"`
 		Content string `json:"content"`
@@ -89,12 +93,12 @@ func (c *Client) GenerateBatch(ctx context.Context, prompt string, count int) ([
 
 	body, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, err
+		return BatchResult{}, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL, bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return BatchResult{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	req.Header.Set("Content-Type", "application/json")
@@ -102,22 +106,22 @@ func (c *Client) GenerateBatch(ctx context.Context, prompt string, count int) ([
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, err
+			return BatchResult{}, err
 		}
-		return nil, &GenerationError{Kind: ErrorTransient, Message: "openai request failed", Err: err}
+		return BatchResult{}, &GenerationError{Kind: ErrorTransient, Message: "openai request failed", Err: err}
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return BatchResult{}, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
 		kind := ErrorProtocol
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError {
 			kind = ErrorTransient
 		}
-		return nil, &GenerationError{
+		return BatchResult{}, &GenerationError{
 			Kind:       kind,
 			StatusCode: resp.StatusCode,
 			Message:    strings.TrimSpace(string(raw)),
@@ -126,16 +130,16 @@ func (c *Client) GenerateBatch(ctx context.Context, prompt string, count int) ([
 
 	var parsed chatCompletionResponse
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return nil, &GenerationError{Kind: ErrorProtocol, Message: "decode response", Err: err}
+		return BatchResult{}, &GenerationError{Kind: ErrorProtocol, Message: "decode response", Err: err}
 	}
 	if len(parsed.Choices) == 0 {
-		return nil, &GenerationError{Kind: ErrorProtocol, Message: "openai returned no choices"}
+		return BatchResult{}, &GenerationError{Kind: ErrorProtocol, Message: "openai returned no choices"}
 	}
 	stems, err := extractStems(parsed.Choices[0].Message.Content)
 	if err != nil {
-		return nil, err
+		return BatchResult{}, err
 	}
-	return stems, nil
+	return BatchResult{Stems: stems, Usage: parsed.Usage.toUsage()}, nil
 }
 
 type responseFormat struct {
@@ -155,6 +159,26 @@ type chatCompletionResponse struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
+	Usage chatCompletionUsage `json:"usage"`
+}
+
+type chatCompletionUsage struct {
+	PromptTokens        int `json:"prompt_tokens"`
+	CompletionTokens    int `json:"completion_tokens"`
+	PromptTokensDetails struct {
+		CachedTokens int `json:"cached_tokens"`
+	} `json:"prompt_tokens_details"`
+}
+
+func (u chatCompletionUsage) toUsage() *Usage {
+	if u.PromptTokens == 0 && u.CompletionTokens == 0 && u.PromptTokensDetails.CachedTokens == 0 {
+		return nil
+	}
+	return &Usage{
+		InputTokens:       u.PromptTokens,
+		OutputTokens:      u.CompletionTokens,
+		CachedInputTokens: u.PromptTokensDetails.CachedTokens,
+	}
 }
 
 func extractStems(content string) ([]string, error) {

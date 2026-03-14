@@ -23,16 +23,21 @@ type Artifact struct {
 }
 
 type Generation struct {
-	Model           string   `json:"model"`
-	Prompt          string   `json:"prompt"`
-	Style           string   `json:"style,omitempty"`
-	GenerateCount   int      `json:"generate_count"`
-	BatchSize       int      `json:"batch_size"`
-	MaxAttempts     int      `json:"max_attempts"`
-	RetryCount      int      `json:"retry_count"`
-	QualityProfile  string   `json:"quality_profile,omitempty"`
-	AvoidSubstrings []string `json:"avoid_substrings,omitempty"`
-	AcceptedCount   int      `json:"accepted_count"`
+	Model             string   `json:"model"`
+	Prompt            string   `json:"prompt"`
+	Style             string   `json:"style,omitempty"`
+	GenerateCount     int      `json:"generate_count"`
+	BatchSize         int      `json:"batch_size"`
+	MaxAttempts       int      `json:"max_attempts"`
+	RetryCount        int      `json:"retry_count"`
+	QualityProfile    string   `json:"quality_profile,omitempty"`
+	AvoidSubstrings   []string `json:"avoid_substrings,omitempty"`
+	AcceptedCount     int      `json:"accepted_count"`
+	InputTokens       int      `json:"input_tokens,omitempty"`
+	OutputTokens      int      `json:"output_tokens,omitempty"`
+	CachedInputTokens int      `json:"cached_input_tokens,omitempty"`
+	PricingAvailable  bool     `json:"pricing_available"`
+	EstimatedCostUSD  float64  `json:"estimated_cost_usd,omitempty"`
 }
 
 type Diagnostics struct {

@@ -19,6 +19,7 @@ available domains.
 - `internal/genquality`: generated-stem quality profiles and explainable rule-based scoring
 - `internal/match`: stable stem result model and per-zone classification
 - `internal/openai`: batched OpenAI stem generation
+  - prompt building, fulfillment policy, and API usage/cost telemetry
 - `internal/report`: filter modes and summary stats
 - `internal/output`: deterministic durable text and JSONL rendering
 - `internal/audit`: JSONL audit logging for one record per checked stem
@@ -140,6 +141,7 @@ available domains.
 - Interactive mode keeps the compact human-facing table on `stderr`; deterministic detailed output is preserved for non-interactive mode and `-out` files.
 - Audit logging is separate from both interactive and deterministic output paths, and records all checked stems whether or not they were visibly shown.
 - Run-summary output is separate from both audit logging and result output, and captures one structured run-level view of settings plus outcomes.
+- When OpenAI returns `usage`, generation runs also accumulate token totals and estimated cost from a small built-in pricing table.
 - JSONL bypasses `termui` entirely.
 
 ## Current CLI capabilities
@@ -165,6 +167,8 @@ available domains.
 - `-interactive-hide-taken` suppresses durable `taken` rows only in interactive mode.
 - `-audit-log <path>` writes one JSONL audit record per checked stem.
 - `-run-summary <path>` writes one JSON summary object per run.
+- Text-mode generation runs surface compact token/cost telemetry during the run and in a final `generation usage` block.
+- Unknown model pricing is reported as unavailable rather than guessed.
 - `-color` / `-no-color` control interactive ANSI styling.
 
 ## Testing rule

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"testing"
@@ -43,7 +44,7 @@ func TestGenerateBatch(t *testing.T) {
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header:     make(http.Header),
-				Body:       io.NopCloser(strings.NewReader(`{"choices":[{"message":{"content":"{\"stems\":[\"brandfoo\",\"noviq\"]}"}}]}`)),
+				Body:       io.NopCloser(strings.NewReader(`{"choices":[{"message":{"content":"{\"stems\":[\"brandfoo\",\"noviq\"]}"}}],"usage":{"prompt_tokens":120,"completion_tokens":18,"prompt_tokens_details":{"cached_tokens":40}}}`)),
 			}, nil
 		})},
 	}
@@ -51,8 +52,21 @@ func TestGenerateBatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateBatch() error = %v", err)
 	}
-	if len(got) != 2 || got[0] != "brandfoo" || got[1] != "noviq" {
-		t.Fatalf("GenerateBatch() = %#v, want [brandfoo noviq]", got)
+	if len(got.Stems) != 2 || got.Stems[0] != "brandfoo" || got.Stems[1] != "noviq" {
+		t.Fatalf("GenerateBatch() stems = %#v, want [brandfoo noviq]", got.Stems)
+	}
+	if got.Usage == nil {
+		t.Fatal("GenerateBatch() usage = nil, want usage data")
+	}
+	if got.Usage.InputTokens != 120 || got.Usage.OutputTokens != 18 || got.Usage.CachedInputTokens != 40 {
+		t.Fatalf("GenerateBatch() usage = %#v, want prompt 120 completion 18 cached 40", got.Usage)
+	}
+	estimate := EstimateUsage(client.Model, *got.Usage)
+	if !estimate.PricingAvailable {
+		t.Fatal("EstimateUsage() pricing unavailable, want known pricing")
+	}
+	if math.Abs(estimate.CostUSD-0.0000258) > 1e-10 {
+		t.Fatalf("EstimateUsage() cost = %f, want 0.0000258", estimate.CostUSD)
 	}
 }
 
@@ -100,7 +114,10 @@ func TestGenerateBatchSalvagesNoisyOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateBatch() error = %v", err)
 	}
-	if len(got) != 5 || got[0] != "Here are ideas:" || got[1] != "brandfoo" || got[4] != "trynex" {
-		t.Fatalf("GenerateBatch() = %#v, want salvaged loose lines", got)
+	if len(got.Stems) != 5 || got.Stems[0] != "Here are ideas:" || got.Stems[1] != "brandfoo" || got.Stems[4] != "trynex" {
+		t.Fatalf("GenerateBatch() stems = %#v, want salvaged loose lines", got.Stems)
+	}
+	if got.Usage != nil {
+		t.Fatalf("GenerateBatch() usage = %#v, want nil when response usage is absent", got.Usage)
 	}
 }

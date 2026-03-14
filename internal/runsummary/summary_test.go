@@ -47,14 +47,19 @@ func TestWriteArtifactJSON(t *testing.T) {
 		StrongHits:        2,
 		PresentInAny:      1,
 		Generation: &Generation{
-			Model:          "gpt-4o-mini",
-			Prompt:         "industrial infrastructure names",
-			GenerateCount:  4,
-			BatchSize:      2,
-			MaxAttempts:    3,
-			RetryCount:     2,
-			QualityProfile: "industrial",
-			AcceptedCount:  3,
+			Model:             "gpt-4o-mini",
+			Prompt:            "industrial infrastructure names",
+			GenerateCount:     4,
+			BatchSize:         2,
+			MaxAttempts:       3,
+			RetryCount:        2,
+			QualityProfile:    "industrial",
+			AcceptedCount:     3,
+			InputTokens:       120,
+			OutputTokens:      18,
+			CachedInputTokens: 40,
+			PricingAvailable:  true,
+			EstimatedCostUSD:  0.0000258,
 		},
 	})
 	if err != nil {
@@ -70,5 +75,15 @@ func TestWriteArtifactJSON(t *testing.T) {
 	}
 	if got["interactive"] != true || got["format"] != "text" {
 		t.Fatalf("got = %#v, want interactive format fields", got)
+	}
+	generation, ok := got["generation"].(map[string]any)
+	if !ok {
+		t.Fatalf("generation = %#v, want generation object", got["generation"])
+	}
+	if generation["input_tokens"] != float64(120) || generation["output_tokens"] != float64(18) {
+		t.Fatalf("generation = %#v, want token fields", generation)
+	}
+	if generation["pricing_available"] != true {
+		t.Fatalf("generation = %#v, want pricing_available true", generation)
 	}
 }

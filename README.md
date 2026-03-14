@@ -117,6 +117,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - Generated batches are normalized and deduped through `internal/candidates`
 - Manual, file, stdin, and generated stems can all be used together
 - Matching still composes `<stem>.<zone>` internally
+- When the OpenAI response includes `usage`, text-mode generation runs show compact token and estimated-cost telemetry
 
 ## Prompt constraints vs validation
 
@@ -155,6 +156,14 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - Generated stems can also be rejected by the configured quality profile before lookup, and those rejections are counted separately in generation progress
 - Interactive and text-mode generation runs emit concise stderr status lines showing batch requests, accepted/rejected counts, retries, and completion/failure
 - At the end of a generation run, text-mode runs also print a compact `generation diagnostics` block summarizing dominant rejection categories across the whole run
+- The same text-mode runs now also print a compact `generation usage` block with:
+  - model
+  - input/output token totals
+  - cached input token totals when available
+  - estimated cost from the repo's built-in pricing table
+- Batch status lines include compact last-call and cumulative estimated cost when pricing is known
+- If the API omits `usage`, the run continues and the usage summary reports `usage: unavailable`
+- If the configured model is not in the built-in pricing table, token totals are still shown when available but cost is reported as `pricing unavailable`
 - JSONL mode stays machine-readable and does not emit live generation progress
 
 ## Generation diagnostics summary
@@ -208,8 +217,25 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - whether interactive mode was used
   - final checked/emitted/strong-hit counts
   - generation settings when generation was used
+  - generation token totals and estimated cost when usage data was available
   - aggregated generation diagnostics and rejection categories
 - Use it when you want one stable artifact per run for diffing, archiving, or comparing prompt/profile changes over time
+
+## Token and cost telemetry
+
+- Token telemetry is grounded in actual OpenAI API `usage` fields when the response includes them
+- The tool tracks:
+  - input tokens
+  - output tokens
+  - cached input tokens from `usage.prompt_tokens_details.cached_tokens` when present
+- Cost is an estimate, not a bill:
+  - it uses the repo's explicit model pricing table
+  - unknown model pricing is not guessed
+  - current pricing assumptions should be updated when the official pricing page changes
+- This telemetry appears in:
+  - compact generation status lines during the run
+  - the end-of-run `generation usage` block
+  - the JSON run-summary artifact
 
 ## Interactive vs fallback text mode
 

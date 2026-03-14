@@ -243,7 +243,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			return err
 		}
 	case "jsonl":
-		allResults, filteredResults, diagnostics, err := processCandidates(context.Background(), lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, nil, nil, func(event progressEvent) error {
+		allResults, filteredResults, diagnostics, usageTotals, err := processCandidates(context.Background(), lookup, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, nil, nil, func(event progressEvent) error {
 			return writeAuditRecord(auditLogger, *backendName, lookup.ZoneNames(), event.Result, event.ReportEmitted, false)
 		})
 		if err != nil {
@@ -257,6 +257,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			Diagnostics:         diagnostics,
 			GeneratedAccepted:   len(allResults) - len(initialCandidates),
 			GenerationRequested: trimmedGeneratePrompt != "",
+			UsageTotals:         usageTotals,
 		}
 	default:
 		return fmt.Errorf("unsupported -format %q: want text or jsonl", *format)
@@ -269,16 +270,20 @@ type runOutcome struct {
 	Diagnostics         candidates.GenerationDiagnostics
 	GeneratedAccepted   int
 	GenerationRequested bool
+	UsageTotals         openai.UsageTotals
 }
 
 func runDeterministicTextMode(ctx context.Context, backendName string, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, statusWriter io.Writer, auditLogger *audit.Logger) (runOutcome, error) {
-	allResults, filteredResults, diagnostics, err := processCandidates(ctx, lookup, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, nil, makeGenerationNotifier(statusWriter), func(event progressEvent) error {
+	allResults, filteredResults, diagnostics, usageTotals, err := processCandidates(ctx, lookup, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, nil, makeGenerationNotifier(statusWriter), func(event progressEvent) error {
 		return writeAuditRecord(auditLogger, backendName, lookup.ZoneNames(), event.Result, event.ReportEmitted, false)
 	})
 	if err != nil {
 		return runOutcome{}, err
 	}
 	if err := writeGenerationDiagnostics(statusWriter, diagnostics); err != nil {
+		return runOutcome{}, err
+	}
+	if err := writeGenerationUsage(statusWriter, cfg.OpenAI.Model, usageTotals, generatePrompt != ""); err != nil {
 		return runOutcome{}, err
 	}
 	summary := report.Summarize(allResults, filteredResults)
@@ -290,6 +295,7 @@ func runDeterministicTextMode(ctx context.Context, backendName string, lookup ba
 		Diagnostics:         diagnostics,
 		GeneratedAccepted:   len(allResults) - len(initialCandidates),
 		GenerationRequested: generatePrompt != "",
+		UsageTotals:         usageTotals,
 	}, nil
 }
 
@@ -303,7 +309,7 @@ func runInteractiveTextMode(ctx context.Context, backendName string, lookup back
 		return runOutcome{}, err
 	}
 
-	allResults, emittedResults, diagnostics, err := processCandidates(ctx, lookup, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, func(event progressEvent) error {
+	allResults, emittedResults, diagnostics, usageTotals, err := processCandidates(ctx, lookup, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, func(event progressEvent) error {
 		if err := console.UpdateActive(event.Index, totalPlanned, event.Candidate); err != nil {
 			return err
 		}
@@ -329,6 +335,9 @@ func runInteractiveTextMode(ctx context.Context, backendName string, lookup back
 	if err := writeGenerationDiagnosticsToConsole(console, diagnostics); err != nil {
 		return runOutcome{}, err
 	}
+	if err := writeGenerationUsageToConsole(console, cfg.OpenAI.Model, usageTotals, generatePrompt != ""); err != nil {
+		return runOutcome{}, err
+	}
 
 	summary := report.Summarize(allResults, emittedResults)
 	if err := console.Finish(summary); err != nil {
@@ -340,6 +349,7 @@ func runInteractiveTextMode(ctx context.Context, backendName string, lookup back
 			Diagnostics:         diagnostics,
 			GeneratedAccepted:   len(allResults) - len(initialCandidates),
 			GenerationRequested: generatePrompt != "",
+			UsageTotals:         usageTotals,
 		}, nil
 	}
 	if err := output.WriteTextSummary(resultWriter, summary); err != nil {
@@ -350,6 +360,7 @@ func runInteractiveTextMode(ctx context.Context, backendName string, lookup back
 		Diagnostics:         diagnostics,
 		GeneratedAccepted:   len(allResults) - len(initialCandidates),
 		GenerationRequested: generatePrompt != "",
+		UsageTotals:         usageTotals,
 	}, nil
 }
 
@@ -361,10 +372,11 @@ type progressEvent struct {
 	ReportEmitted bool
 }
 
-func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, onProgress func(progressEvent) error, onGenerationEvent func(openai.Event) error, onAudit func(progressEvent) error) ([]match.CandidateResult, []match.CandidateResult, candidates.GenerationDiagnostics, error) {
+func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, onProgress func(progressEvent) error, onGenerationEvent func(openai.Event) error, onAudit func(progressEvent) error) ([]match.CandidateResult, []match.CandidateResult, candidates.GenerationDiagnostics, openai.UsageTotals, error) {
 	allResults := make([]match.CandidateResult, 0, len(initialCandidates))
 	emittedResults := make([]match.CandidateResult, 0, len(initialCandidates))
 	var diagnostics candidates.GenerationDiagnostics
+	var usageTotals openai.UsageTotals
 	processedCount := 0
 
 	processBatch := func(candidates []string) error {
@@ -401,15 +413,15 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 	}
 
 	if err := processBatch(initialCandidates); err != nil {
-		return nil, nil, diagnostics, err
+		return nil, nil, diagnostics, usageTotals, err
 	}
 
 	if generatePrompt == "" {
-		return allResults, emittedResults, diagnostics, nil
+		return allResults, emittedResults, diagnostics, usageTotals, nil
 	}
 
 	fulfiller := openai.NewFulfiller(generator, cfg.Generate)
-	err := fulfiller.Fulfill(ctx, generatePrompt, cfg.Generate.Count, func(rawBatch []string, limit int) (candidates.BatchReport, error) {
+	usageTotals, err := fulfiller.Fulfill(ctx, generatePrompt, cfg.Generate.Count, func(rawBatch []string, limit int) (candidates.BatchReport, error) {
 		report := collector.AddGeneratedReportLimited(rawBatch, limit, candidates.GeneratedPolicy{
 			AvoidSubstrings: cfg.Generate.AvoidSubstrings,
 			QualityProfile:  cfg.Generate.QualityProfile,
@@ -421,10 +433,10 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 		return report, nil
 	}, onGenerationEvent)
 	if err != nil {
-		return nil, nil, diagnostics, err
+		return nil, nil, diagnostics, usageTotals, err
 	}
 
-	return allResults, emittedResults, diagnostics, nil
+	return allResults, emittedResults, diagnostics, usageTotals, nil
 }
 
 func writeAuditRecord(logger *audit.Logger, backendName string, requestedZones []string, result match.CandidateResult, reportEmitted, interactiveEmitted bool) error {
@@ -472,6 +484,52 @@ func writeGenerationDiagnosticsToConsole(console *termui.Console, diagnostics ca
 	return nil
 }
 
+func writeGenerationUsage(w io.Writer, model string, totals openai.UsageTotals, generationRequested bool) error {
+	if w == nil || !generationRequested {
+		return nil
+	}
+	for _, line := range renderGenerationUsageLines(model, totals) {
+		if _, err := fmt.Fprintln(w, line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeGenerationUsageToConsole(console *termui.Console, model string, totals openai.UsageTotals, generationRequested bool) error {
+	if console == nil || !generationRequested {
+		return nil
+	}
+	for _, line := range renderGenerationUsageLines(model, totals) {
+		if err := console.Note(line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func renderGenerationUsageLines(model string, totals openai.UsageTotals) []string {
+	lines := []string{"generation usage"}
+	if model != "" {
+		lines = append(lines, fmt.Sprintf("  model: %s", model))
+	}
+	if !totals.HasUsage() {
+		lines = append(lines, "  usage: unavailable")
+		return lines
+	}
+	lines = append(lines,
+		fmt.Sprintf("  input_tokens: %d", totals.InputTokens),
+		fmt.Sprintf("  output_tokens: %d", totals.OutputTokens),
+		fmt.Sprintf("  cached_input_tokens: %d", totals.CachedInputTokens),
+	)
+	if totals.PricingAvailable {
+		lines = append(lines, fmt.Sprintf("  estimated_cost_usd: %s", openai.FormatCostUSD(totals.EstimatedCostUSD)))
+	} else {
+		lines = append(lines, "  estimated_cost_usd: pricing unavailable")
+	}
+	return lines
+}
+
 func buildRunSummary(backendName string, requestedZones []string, filterMode report.FilterMode, format string, interactive bool, generatePrompt string, cfg config.Config, outcome runOutcome) runsummary.Artifact {
 	artifact := runsummary.Artifact{
 		Backend:           backendName,
@@ -487,16 +545,21 @@ func buildRunSummary(backendName string, requestedZones []string, filterMode rep
 	}
 	if outcome.GenerationRequested {
 		artifact.Generation = &runsummary.Generation{
-			Model:           cfg.OpenAI.Model,
-			Prompt:          generatePrompt,
-			Style:           cfg.Generate.Style,
-			GenerateCount:   cfg.Generate.Count,
-			BatchSize:       cfg.Generate.BatchSize,
-			MaxAttempts:     cfg.Generate.MaxAttemptsPerBatch,
-			RetryCount:      cfg.Generate.RetryCount,
-			QualityProfile:  cfg.Generate.QualityProfile,
-			AvoidSubstrings: append([]string(nil), cfg.Generate.AvoidSubstrings...),
-			AcceptedCount:   outcome.GeneratedAccepted,
+			Model:             cfg.OpenAI.Model,
+			Prompt:            generatePrompt,
+			Style:             cfg.Generate.Style,
+			GenerateCount:     cfg.Generate.Count,
+			BatchSize:         cfg.Generate.BatchSize,
+			MaxAttempts:       cfg.Generate.MaxAttemptsPerBatch,
+			RetryCount:        cfg.Generate.RetryCount,
+			QualityProfile:    cfg.Generate.QualityProfile,
+			AvoidSubstrings:   append([]string(nil), cfg.Generate.AvoidSubstrings...),
+			AcceptedCount:     outcome.GeneratedAccepted,
+			InputTokens:       outcome.UsageTotals.InputTokens,
+			OutputTokens:      outcome.UsageTotals.OutputTokens,
+			CachedInputTokens: outcome.UsageTotals.CachedInputTokens,
+			PricingAvailable:  outcome.UsageTotals.PricingAvailable,
+			EstimatedCostUSD:  outcome.UsageTotals.EstimatedCostUSD,
 		}
 	}
 	return artifact
@@ -517,11 +580,27 @@ func renderGenerationEvent(event openai.Event) string {
 		if event.Err != nil && openai.IsQuality(event.Err) {
 			return fmt.Sprintf("generation: batch %d attempt %d produced unusable output, need %d more", event.Batch, event.Attempt, event.RemainingBatch)
 		}
-		return fmt.Sprintf("generation: batch %d attempt %d accepted %d, invalid %d, banned %d, quality_rejected %d, duplicates %d, need %d more", event.Batch, event.Attempt, event.Accepted, event.Invalid, event.Banned, event.QualityRejected, event.Duplicates, event.RemainingBatch)
+		line := fmt.Sprintf("generation: batch %d attempt %d accepted %d, invalid %d, banned %d, quality_rejected %d, duplicates %d, need %d more", event.Batch, event.Attempt, event.Accepted, event.Invalid, event.Banned, event.QualityRejected, event.Duplicates, event.RemainingBatch)
+		if event.Usage != nil {
+			if event.LastEstimate.PricingAvailable {
+				line += fmt.Sprintf(" | last %s | total %s", openai.FormatCostUSD(event.LastEstimate.CostUSD), openai.FormatCostUSD(event.Totals.EstimatedCostUSD))
+			} else {
+				line += " | pricing unavailable"
+			}
+		}
+		return line
 	case openai.EventRetry:
 		return fmt.Sprintf("generation: retrying batch %d attempt %d (%d/%d) after transient error", event.Batch, event.Attempt, event.Retry, event.RetryCount)
 	case openai.EventComplete:
-		return fmt.Sprintf("generation: complete, accepted %d stems", event.Accepted)
+		line := fmt.Sprintf("generation: complete, accepted %d stems", event.Accepted)
+		if event.Totals.HasUsage() {
+			if event.Totals.PricingAvailable {
+				line += fmt.Sprintf(" | total %s", openai.FormatCostUSD(event.Totals.EstimatedCostUSD))
+			} else {
+				line += " | pricing unavailable"
+			}
+		}
+		return line
 	case openai.EventFailed:
 		if event.Err == nil {
 			return "generation: failed"

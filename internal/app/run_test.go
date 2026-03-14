@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -27,11 +28,12 @@ func fixturePath(parts ...string) string {
 type fakeStemGenerator struct {
 	responses []fakeStemResponse
 	calls     []int
+	model     string
 }
 
 type fakeStemResponse struct {
-	stems []string
-	err   error
+	result openai.BatchResult
+	err    error
 }
 
 type fakeLookup struct {
@@ -47,14 +49,21 @@ func (f fakeLookup) Contains(_ context.Context, zone, stem string) (bool, error)
 	return f.present[zone+"/"+stem], nil
 }
 
-func (f *fakeStemGenerator) GenerateBatch(_ context.Context, _ string, count int) ([]string, error) {
+func (f *fakeStemGenerator) GenerateBatch(_ context.Context, _ string, count int) (openai.BatchResult, error) {
 	f.calls = append(f.calls, count)
 	if len(f.responses) == 0 {
-		return nil, fmt.Errorf("unexpected GenerateBatch call")
+		return openai.BatchResult{}, fmt.Errorf("unexpected GenerateBatch call")
 	}
 	response := f.responses[0]
 	f.responses = f.responses[1:]
-	return response.stems, response.err
+	return response.result, response.err
+}
+
+func (f *fakeStemGenerator) ModelName() string {
+	if f.model != "" {
+		return f.model
+	}
+	return "gpt-4o-mini"
 }
 
 func TestRunTextWorkflowFallsBackWhenNotInteractive(t *testing.T) {
@@ -694,9 +703,16 @@ func TestRunTextWorkflowWithGeneratedStems(t *testing.T) {
 	}
 
 	generator := &fakeStemGenerator{
+		model: "gpt-4o-mini",
 		responses: []fakeStemResponse{
-			{stems: []string{"brandfoo", "noviq"}},
-			{stems: []string{"example", "trynex"}},
+			{result: openai.BatchResult{
+				Stems: []string{"brandfoo", "noviq"},
+				Usage: &openai.Usage{InputTokens: 120, OutputTokens: 18, CachedInputTokens: 40},
+			}},
+			{result: openai.BatchResult{
+				Stems: []string{"example", "trynex"},
+				Usage: &openai.Usage{InputTokens: 80, OutputTokens: 12},
+			}},
 		},
 	}
 
@@ -754,10 +770,16 @@ func TestRunTextWorkflowWithGeneratedStems(t *testing.T) {
 	progress := stderr.String()
 	wantProgress := []string{
 		"generation: batch 1 attempt 1 requesting 2 stems",
-		"generation: batch 1 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more",
+		"generation: batch 1 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more | last $0.000026 | total $0.000026",
 		"generation: batch 2 attempt 1 requesting 2 stems",
-		"generation: batch 2 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more",
-		"generation: complete, accepted 4 stems",
+		"generation: batch 2 attempt 1 accepted 2, invalid 0, banned 0, quality_rejected 0, duplicates 0, need 0 more | last $0.000019 | total $0.000045",
+		"generation: complete, accepted 4 stems | total $0.000045",
+		"generation usage",
+		"  model: gpt-4o-mini",
+		"  input_tokens: 200",
+		"  output_tokens: 30",
+		"  cached_input_tokens: 40",
+		"  estimated_cost_usd: $0.000045",
 	}
 	for _, fragment := range wantProgress {
 		if !strings.Contains(progress, fragment) {
@@ -777,8 +799,8 @@ func TestRunTextWorkflowInteractiveWithGeneratedStems(t *testing.T) {
 
 	generator := &fakeStemGenerator{
 		responses: []fakeStemResponse{
-			{stems: []string{"brandfoo", "example"}},
-			{stems: []string{"noviq"}},
+			{result: openai.BatchResult{Stems: []string{"brandfoo", "example"}}},
+			{result: openai.BatchResult{Stems: []string{"noviq"}}},
 		},
 	}
 
@@ -852,9 +874,9 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 
 	generator := &fakeStemGenerator{
 		responses: []fakeStemResponse{
-			{stems: []string{"shieldr", "trynex"}},
-			{stems: []string{"noviq", "tractix"}},
-			{stems: []string{"secbase"}},
+			{result: openai.BatchResult{Stems: []string{"shieldr", "trynex"}}},
+			{result: openai.BatchResult{Stems: []string{"noviq", "tractix"}}},
+			{result: openai.BatchResult{Stems: []string{"secbase"}}},
 		},
 	}
 
@@ -1219,8 +1241,8 @@ func TestRunTextWorkflowRejectsBannedGeneratedStems(t *testing.T) {
 
 	generator := &fakeStemGenerator{
 		responses: []fakeStemResponse{
-			{stems: []string{"devspark", "noviq"}},
-			{stems: []string{"cloudbase", "trynex"}},
+			{result: openai.BatchResult{Stems: []string{"devspark", "noviq"}}},
+			{result: openai.BatchResult{Stems: []string{"cloudbase", "trynex"}}},
 		},
 	}
 
@@ -1272,8 +1294,8 @@ func TestRunTextWorkflowRejectsWeakGeneratedStems(t *testing.T) {
 
 	generator := &fakeStemGenerator{
 		responses: []fakeStemResponse{
-			{stems: []string{"theravia", "noviq"}},
-			{stems: []string{"veloria", "traktor"}},
+			{result: openai.BatchResult{Stems: []string{"theravia", "noviq"}}},
+			{result: openai.BatchResult{Stems: []string{"veloria", "traktor"}}},
 		},
 	}
 
@@ -1328,9 +1350,16 @@ func TestRunGenerationRunSummaryIncludesDiagnostics(t *testing.T) {
 	}
 
 	generator := &fakeStemGenerator{
+		model: "gpt-4o-mini",
 		responses: []fakeStemResponse{
-			{stems: []string{"devspark", "theravia"}},
-			{stems: []string{"noviq", "traktor"}},
+			{result: openai.BatchResult{
+				Stems: []string{"devspark", "theravia"},
+				Usage: &openai.Usage{InputTokens: 120, OutputTokens: 18, CachedInputTokens: 40},
+			}},
+			{result: openai.BatchResult{
+				Stems: []string{"noviq", "traktor"},
+				Usage: &openai.Usage{InputTokens: 80, OutputTokens: 12},
+			}},
 		},
 	}
 
@@ -1374,6 +1403,16 @@ func TestRunGenerationRunSummaryIncludesDiagnostics(t *testing.T) {
 	if generation["accepted_count"] != float64(2) {
 		t.Fatalf("accepted_count = %#v, want 2", generation["accepted_count"])
 	}
+	if generation["input_tokens"] != float64(200) || generation["output_tokens"] != float64(30) || generation["cached_input_tokens"] != float64(40) {
+		t.Fatalf("generation = %#v, want token totals", generation)
+	}
+	if generation["pricing_available"] != true {
+		t.Fatalf("generation = %#v, want pricing_available true", generation)
+	}
+	cost, ok := generation["estimated_cost_usd"].(float64)
+	if !ok || math.Abs(cost-4.5e-05) > 1e-12 {
+		t.Fatalf("generation = %#v, want estimated_cost_usd ~= 0.000045", generation)
+	}
 	diagnostics, ok := got["diagnostics"].(map[string]any)
 	if !ok {
 		t.Fatalf("diagnostics = %#v, want diagnostics object", got["diagnostics"])
@@ -1390,6 +1429,30 @@ func TestRunGenerationRunSummaryIncludesDiagnostics(t *testing.T) {
 	}
 }
 
+func TestRenderGenerationUsageLinesPricingUnavailable(t *testing.T) {
+	lines := renderGenerationUsageLines("custom-model", openai.UsageTotals{
+		Model:             "custom-model",
+		Calls:             1,
+		CallsWithUsage:    1,
+		InputTokens:       100,
+		OutputTokens:      20,
+		CachedInputTokens: 10,
+	})
+	joined := strings.Join(lines, "\n")
+	for _, fragment := range []string{
+		"generation usage",
+		"model: custom-model",
+		"input_tokens: 100",
+		"output_tokens: 20",
+		"cached_input_tokens: 10",
+		"estimated_cost_usd: pricing unavailable",
+	} {
+		if !strings.Contains(joined, fragment) {
+			t.Fatalf("renderGenerationUsageLines() missing %q:\n%s", fragment, joined)
+		}
+	}
+}
+
 func TestRunInteractiveGenerationDiagnosticsSummary(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  quality_profile: industrial\n"), 0o644); err != nil {
@@ -1398,8 +1461,8 @@ func TestRunInteractiveGenerationDiagnosticsSummary(t *testing.T) {
 
 	generator := &fakeStemGenerator{
 		responses: []fakeStemResponse{
-			{stems: []string{"theravia", "noviq"}},
-			{stems: []string{"veloria", "traktor"}},
+			{result: openai.BatchResult{Stems: []string{"theravia", "noviq"}}},
+			{result: openai.BatchResult{Stems: []string{"veloria", "traktor"}}},
 		},
 	}
 
@@ -1448,8 +1511,8 @@ func TestRunJSONLWorkflowWithGeneratedStems(t *testing.T) {
 
 	generator := &fakeStemGenerator{
 		responses: []fakeStemResponse{
-			{stems: []string{"example"}},
-			{stems: []string{"noviq"}},
+			{result: openai.BatchResult{Stems: []string{"example"}}},
+			{result: openai.BatchResult{Stems: []string{"noviq"}}},
 		},
 	}
 
@@ -1544,8 +1607,8 @@ func TestRunTextWorkflowWithDegradedGeneratedBatch(t *testing.T) {
 
 	generator := &fakeStemGenerator{
 		responses: []fakeStemResponse{
-			{stems: []string{"missing", "bad.name"}},
-			{stems: []string{"noviq", "trynex"}},
+			{result: openai.BatchResult{Stems: []string{"missing", "bad.name"}}},
+			{result: openai.BatchResult{Stems: []string{"noviq", "trynex"}}},
 		},
 	}
 
@@ -1619,8 +1682,8 @@ func TestRunTextWorkflowGeneratedFailureReportsClearly(t *testing.T) {
 
 	generator := &fakeStemGenerator{
 		responses: []fakeStemResponse{
-			{stems: []string{"missing", "bad.name"}},
-			{stems: []string{"missing", "still bad"}},
+			{result: openai.BatchResult{Stems: []string{"missing", "bad.name"}}},
+			{result: openai.BatchResult{Stems: []string{"missing", "still bad"}}},
 		},
 	}
 
