@@ -12,7 +12,9 @@ The repository currently uses stem-based matching across loaded zones:
 - streaming line-by-line zone reading
 - `internal/index` for exact-match named-zone indexing and deterministic lookup
 - `internal/candidates` for stem loading, normalization, merge, and dedupe
+- `internal/config` for YAML config loading with CLI/env/local/base/default precedence
 - `internal/match` for stable per-stem classification across loaded zones
+- `internal/openai` for batch stem generation through the OpenAI API
 - `internal/report` for filtering and summary statistics
 - `internal/output` for deterministic durable text and JSONL rendering
 - `internal/termui` for lightweight interactive terminal rendering on `stderr`
@@ -46,6 +48,35 @@ full `.com` or `.net` CZDS zone files.
 - `-candidate-stdin` entries are read third
 - Stems are normalized and deduplicated while preserving first-seen order
 - Invalid stems are rejected with a clear error
+
+## YAML config and OpenAI generation
+
+- Optional config files:
+  - `domainfinder.yaml`
+  - `domainfinder.local.yaml`
+- Config precedence:
+  1. CLI flags
+  2. environment variables
+  3. `domainfinder.local.yaml`
+  4. `domainfinder.yaml`
+  5. built-in defaults
+- `OPENAI_API_KEY` is the primary secret source
+- `domainfinder.local.yaml` may contain a local fallback `openai.api_key`
+- `domainfinder.yaml` must not contain API keys
+- `domainfinder.local.yaml` is ignored by git
+
+Committed example config lives at [`domainfinder.yaml.example`](/Users/gene/src/domain-finder/domainfinder.yaml.example).
+
+## Generation workflow
+
+- `-generate "prompt text"` requests OpenAI-generated stems
+- `-generate-count` sets the total requested stem count
+- `-generate-batch-size` sets the per-request batch size
+- `-generate-model` overrides the configured OpenAI model
+- Generated values are treated as stems, not FQDNs
+- Generated batches are normalized and deduped through `internal/candidates`
+- Manual, file, stdin, and generated stems can all be used together
+- Matching still composes `<stem>.<zone>` internally
 
 ## Interactive vs fallback text mode
 
@@ -123,5 +154,22 @@ go run ./cmd/domainfinder \
   -candidate missing
 ```
 
+YAML-configured generation with manual stems:
+
+```sh
+cp domainfinder.yaml.example domainfinder.yaml
+export OPENAI_API_KEY=your-key-here
+env GOCACHE=/tmp/domain-finder-gocache \
+go run ./cmd/domainfinder \
+  -interactive \
+  -zone com=testdata/small/com.zone \
+  -zone net=testdata/small/net.zone.slice \
+  -candidate missing \
+  -generate "short invented SaaS brand stems" \
+  -generate-count 6 \
+  -generate-batch-size 3
+```
+
 This still reports only exact presence or absence in loaded zone files. It is
-not a registrar availability check.
+not a registrar availability check. OpenAI generation produces candidate stems
+only; it does not check registrar or DNS availability.

@@ -18,7 +18,8 @@ type Sources struct {
 }
 
 // Load collects candidates from all configured sources, normalizes them,
-// validates them as full FQDNs, and deduplicates while preserving first-seen order.
+// validates them as single-label stems, and deduplicates while preserving
+// first-seen order.
 func Load(s Sources) ([]string, error) {
 	values := make([]string, 0, len(s.CLI))
 	values = append(values, s.CLI...)

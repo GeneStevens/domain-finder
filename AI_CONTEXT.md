@@ -13,7 +13,9 @@ available domains.
 - `internal/zonefile`: zone opening, gzip detection, streaming reader, parser
 - `internal/index`: single-zone exact-match index, multi-zone lookup, loader
 - `internal/candidates`: stem loading, normalization, merge, and dedupe
+- `internal/config`: YAML config loading and precedence resolution
 - `internal/match`: stable stem result model and per-zone classification
+- `internal/openai`: batched OpenAI stem generation
 - `internal/report`: filter modes and summary stats
 - `internal/output`: deterministic durable text and JSONL rendering
 - `internal/termui`: interactive stderr console rendering
@@ -51,6 +53,30 @@ available domains.
   - invalid stems return an error
 - Current scope:
   - single-label stems only
+- Generated stems:
+  - flow through `internal/candidates.Collector`
+  - reuse the same normalization and dedupe policy as manual stems
+
+## Config and generation
+
+- Optional config files:
+  - `domainfinder.yaml`
+  - `domainfinder.local.yaml`
+- Precedence:
+  - CLI flags
+  - environment variables
+  - local YAML
+  - base YAML
+  - built-in defaults
+- API key policy:
+  - prefer `OPENAI_API_KEY`
+  - allow `domainfinder.local.yaml` fallback for local-only use
+  - do not put API keys in `domainfinder.yaml`
+- Generation model:
+  - `-generate` enables OpenAI stem generation
+  - generation happens in batches
+  - each batch is normalized, deduped, and processed before the next batch
+  - generated outputs must be stems only, not FQDNs
 
 ## Result model
 
@@ -80,6 +106,8 @@ available domains.
 - Repeated `-candidate stem` flags add explicit stems.
 - `-candidate-file <path>` loads stems from a text file.
 - `-candidate-stdin` loads stems from stdin.
+- `-generate <prompt>` requests OpenAI-generated stems.
+- `-generate-count`, `-generate-batch-size`, and `-generate-model` override generation config.
 - `-format text|jsonl` selects a human-readable or machine-readable output mode.
 - `-filter all|absent-in-all` controls which results are emitted.
 - `-out <path>` writes durable output to a file instead of stdout.
@@ -102,6 +130,7 @@ fixtures or tiny realistic slices under `testdata/`.
 - No concurrency yet.
 - No full-screen TUI framework.
 - No advanced terminal UI beyond the streaming stderr console.
+- No concurrency in generation or matching.
 - No registrar checks or probabilistic availability logic.
 - No filename-based zone inference.
 - No large-file optimization beyond streaming reads.

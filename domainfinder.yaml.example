@@ -1,0 +1,6 @@
+openai:
+  model: gpt-4o-mini
+
+generate:
+  count: 20
+  batch_size: 10

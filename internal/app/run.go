@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -8,14 +9,21 @@ import (
 	"strings"
 
 	"github.com/gene/domain-finder/internal/candidates"
+	"github.com/gene/domain-finder/internal/config"
 	"github.com/gene/domain-finder/internal/index"
 	"github.com/gene/domain-finder/internal/match"
+	"github.com/gene/domain-finder/internal/openai"
 	"github.com/gene/domain-finder/internal/output"
 	"github.com/gene/domain-finder/internal/report"
 	"github.com/gene/domain-finder/internal/termui"
 )
 
 var stderrIsTTY = termui.IsTTY
+var loadConfig = config.Load
+var newStemGenerator = func(cfg config.Config) (openai.StemGenerator, error) {
+	return openai.NewClient(cfg)
+}
+var getWorkingDir = os.Getwd
 
 // Run executes the CLI entrypoint.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
@@ -29,6 +37,10 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	outPath := fs.String("out", "", "write output to this file instead of stdout")
 	candidateFile := fs.String("candidate-file", "", "read candidates from a text file")
 	candidateStdin := fs.Bool("candidate-stdin", false, "read candidates from stdin")
+	generatePrompt := fs.String("generate", "", "generate candidate stems from this prompt")
+	generateCount := fs.Int("generate-count", 0, "total number of stems to generate")
+	generateBatchSize := fs.Int("generate-batch-size", 0, "number of stems requested per generation batch")
+	generateModel := fs.String("generate-model", "", "OpenAI model for stem generation")
 	forceInteractive := fs.Bool("interactive", false, "force interactive text console")
 	noInteractive := fs.Bool("no-interactive", false, "disable interactive text console")
 	fs.Var(&zones, "zone", "named zone file in the form zone=path (repeatable)")
@@ -36,7 +48,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 
 	fs.Usage = func() {
 		fmt.Fprintf(stderr, "Usage: domainfinder -zone com=path/to/com.zone -candidate example [more flags]\n\n")
-		fmt.Fprintf(stderr, "Loads named zone files and checks candidate stems across all loaded zones.\n")
+		fmt.Fprintf(stderr, "Loads named zone files, checks candidate stems across all loaded zones, and can generate new stems with OpenAI.\n")
 		fs.PrintDefaults()
 	}
 
@@ -47,9 +59,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		fs.Usage()
 		return fmt.Errorf("at least one -zone flag is required")
 	}
-	if len(cliCandidates) == 0 && *candidateFile == "" && !*candidateStdin {
+	if len(cliCandidates) == 0 && *candidateFile == "" && !*candidateStdin && strings.TrimSpace(*generatePrompt) == "" {
 		fs.Usage()
-		return fmt.Errorf("provide at least one -candidate, -candidate-file, or -candidate-stdin")
+		return fmt.Errorf("provide at least one -candidate, -candidate-file, -candidate-stdin, or -generate")
 	}
 
 	filterMode, err := report.ParseFilterMode(*filterValue)
@@ -63,6 +75,12 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		Stdin:    stdin,
 		UseStdin: *candidateStdin,
 	})
+	if err != nil {
+		return err
+	}
+
+	collector := candidates.NewCollector()
+	initialCandidates, err := collector.AddAll(loadedCandidates)
 	if err != nil {
 		return err
 	}
@@ -82,56 +100,79 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		writer = file
 	}
 
+	var cfg config.Config
+	var generator openai.StemGenerator
+	trimmedGeneratePrompt := strings.TrimSpace(*generatePrompt)
+	if trimmedGeneratePrompt != "" {
+		workingDir, err := getWorkingDir()
+		if err != nil {
+			return fmt.Errorf("determine working directory: %w", err)
+		}
+		cfg, err = loadConfig(workingDir, os.LookupEnv, config.CLIOverrides{
+			OpenAIModel:       strings.TrimSpace(*generateModel),
+			GenerateCount:     *generateCount,
+			GenerateBatchSize: *generateBatchSize,
+		})
+		if err != nil {
+			return err
+		}
+		generator, err = newStemGenerator(cfg)
+		if err != nil {
+			return err
+		}
+	}
+
 	switch *format {
 	case "text":
 		if termui.ShouldUseInteractive(*format, *forceInteractive, *noInteractive, stderr, stderrIsTTY) {
-			return runInteractiveTextMode(multi, loadedCandidates, filterMode, writer, stderr)
+			return runInteractiveTextMode(context.Background(), multi, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, writer, stderr)
 		}
-		return runDeterministicTextMode(multi, loadedCandidates, filterMode, writer)
+		return runDeterministicTextMode(context.Background(), multi, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, writer)
 	case "jsonl":
-		allResults := match.ClassifyAll(multi, loadedCandidates)
-		filteredResults := report.ApplyFilter(allResults, filterMode)
+		allResults, filteredResults, err := processCandidates(context.Background(), multi, initialCandidates, collector, generator, trimmedGeneratePrompt, cfg, filterMode, nil)
+		if err != nil {
+			return err
+		}
+		_ = allResults
 		return output.WriteJSONL(writer, filteredResults)
 	default:
 		return fmt.Errorf("unsupported -format %q: want text or jsonl", *format)
 	}
 }
 
-func runDeterministicTextMode(multi *index.Multi, candidates []string, filterMode report.FilterMode, resultWriter io.Writer) error {
-	allResults := match.ClassifyAll(multi, candidates)
-	filteredResults := report.ApplyFilter(allResults, filterMode)
+func runDeterministicTextMode(ctx context.Context, multi *index.Multi, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter io.Writer) error {
+	allResults, filteredResults, err := processCandidates(ctx, multi, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, nil)
+	if err != nil {
+		return err
+	}
 	summary := report.Summarize(allResults, filteredResults)
 	return output.WriteText(resultWriter, filteredResults, summary)
 }
 
-func runInteractiveTextMode(multi *index.Multi, candidates []string, filterMode report.FilterMode, resultWriter, progressWriter io.Writer) error {
-	allResults := make([]match.CandidateResult, 0, len(candidates))
-	emittedResults := make([]match.CandidateResult, 0, len(candidates))
-	console := termui.NewConsole(progressWriter, multi.ZoneNames(), candidates)
-
-	if err := console.Start(len(candidates), filterMode); err != nil {
+func runInteractiveTextMode(ctx context.Context, multi *index.Multi, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, resultWriter, progressWriter io.Writer) error {
+	totalPlanned := len(initialCandidates)
+	if generatePrompt != "" {
+		totalPlanned += cfg.Generate.Count
+	}
+	console := termui.NewConsole(progressWriter, multi.ZoneNames(), initialCandidates)
+	if err := console.Start(totalPlanned, filterMode); err != nil {
 		return err
 	}
 
-	for i, candidate := range candidates {
-		if err := console.UpdateActive(i+1, len(candidates), candidate); err != nil {
+	allResults, emittedResults, err := processCandidates(ctx, multi, initialCandidates, collector, generator, generatePrompt, cfg, filterMode, func(event progressEvent) error {
+		if err := console.UpdateActive(event.Index, totalPlanned, event.Candidate); err != nil {
 			return err
 		}
-
-		result := match.Classify(multi, candidate)
-		allResults = append(allResults, result)
-
-		if !report.ShouldEmit(result, filterMode) {
-			continue
+		if !event.Emitted {
+			return nil
 		}
-
-		if err := console.EmitRow(result); err != nil {
+		if err := console.EmitRow(event.Result); err != nil {
 			return err
 		}
-		if err := output.WriteTextResult(resultWriter, result); err != nil {
-			return err
-		}
-		emittedResults = append(emittedResults, result)
+		return output.WriteTextResult(resultWriter, event.Result)
+	})
+	if err != nil {
+		return err
 	}
 
 	summary := report.Summarize(allResults, emittedResults)
@@ -139,6 +180,72 @@ func runInteractiveTextMode(multi *index.Multi, candidates []string, filterMode 
 		return err
 	}
 	return output.WriteTextSummary(resultWriter, summary)
+}
+
+type progressEvent struct {
+	Index     int
+	Candidate string
+	Result    match.CandidateResult
+	Emitted   bool
+}
+
+func processCandidates(ctx context.Context, multi *index.Multi, initialCandidates []string, collector *candidates.Collector, generator openai.StemGenerator, generatePrompt string, cfg config.Config, filterMode report.FilterMode, onProgress func(progressEvent) error) ([]match.CandidateResult, []match.CandidateResult, error) {
+	allResults := make([]match.CandidateResult, 0, len(initialCandidates))
+	emittedResults := make([]match.CandidateResult, 0, len(initialCandidates))
+	processedCount := 0
+
+	processBatch := func(candidates []string) error {
+		for _, candidate := range candidates {
+			processedCount++
+			result := match.Classify(multi, candidate)
+			allResults = append(allResults, result)
+			emitted := report.ShouldEmit(result, filterMode)
+			if emitted {
+				emittedResults = append(emittedResults, result)
+			}
+			if onProgress != nil {
+				if err := onProgress(progressEvent{
+					Index:     processedCount,
+					Candidate: candidate,
+					Result:    result,
+					Emitted:   emitted,
+				}); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+
+	if err := processBatch(initialCandidates); err != nil {
+		return nil, nil, err
+	}
+
+	if generatePrompt == "" {
+		return allResults, emittedResults, nil
+	}
+
+	remaining := cfg.Generate.Count
+	for remaining > 0 {
+		batchSize := cfg.Generate.BatchSize
+		if batchSize <= 0 || batchSize > remaining {
+			batchSize = remaining
+		}
+		rawBatch, err := generator.GenerateBatch(ctx, generatePrompt, batchSize)
+		if err != nil {
+			return nil, nil, err
+		}
+		newCandidates, err := collector.AddAll(rawBatch)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := processBatch(newCandidates); err != nil {
+			return nil, nil, err
+		}
+		remaining -= batchSize
+	}
+
+	return allResults, emittedResults, nil
 }
 
 type zoneFlag map[string]string
