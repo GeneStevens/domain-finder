@@ -10,6 +10,7 @@ import (
 type GenerationDiagnostics struct {
 	Invalid          int
 	Banned           int
+	TooShort         int
 	BannedSubstrings int
 	BannedPrefixes   int
 	BannedSuffixes   int
@@ -26,6 +27,7 @@ func (d *GenerationDiagnostics) MergeBatch(report BatchReport) {
 	}
 	d.Invalid += report.Invalid
 	d.Banned += report.LexicalRejected
+	d.TooShort += report.TooShort
 	d.BannedSubstrings += report.BannedSubstrings
 	d.BannedPrefixes += report.BannedPrefixes
 	d.BannedSuffixes += report.BannedSuffixes
@@ -45,7 +47,7 @@ func (d *GenerationDiagnostics) MergeBatch(report BatchReport) {
 
 // HasData reports whether any generated rejection diagnostics were recorded.
 func (d GenerationDiagnostics) HasData() bool {
-	return d.Invalid > 0 || d.Banned > 0 || d.BannedSubstrings > 0 || d.BannedPrefixes > 0 || d.BannedSuffixes > 0 || d.QualityRejected > 0 || d.FamilyRejected > 0 || d.Duplicates > 0 || len(d.QualityReasons) > 0
+	return d.Invalid > 0 || d.Banned > 0 || d.TooShort > 0 || d.BannedSubstrings > 0 || d.BannedPrefixes > 0 || d.BannedSuffixes > 0 || d.QualityRejected > 0 || d.FamilyRejected > 0 || d.Duplicates > 0 || len(d.QualityReasons) > 0
 }
 
 // Lines renders a stable compact diagnostics block.
@@ -54,6 +56,9 @@ func (d GenerationDiagnostics) Lines() []string {
 		return nil
 	}
 	lines := []string{"generation diagnostics"}
+	if d.TooShort > 0 {
+		lines = append(lines, fmt.Sprintf("  too_short: %d", d.TooShort))
+	}
 	if d.BannedSubstrings > 0 {
 		lines = append(lines, fmt.Sprintf("  banned_substring: %d", d.BannedSubstrings))
 	}

@@ -170,6 +170,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-model` overrides the configured OpenAI model
 - `-generate-style` adds reusable style guidance such as `invented SaaS` or `developer tool`
 - `-generate-quality-profile industrial|off` applies a generated-only quality filter after validation and lexical bans
+- `-generate-min-length` requires generated stems to be at least `N` letters long
 - `-generate-max-length` prefers stems with no more than `N` letters
 - `-generate-max-syllables` prefers shorter, simpler-sounding stems
 - `-generate-prefix` prefers stems that start with specific text
@@ -205,6 +206,10 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `avoid_prefixes` and `avoid_suffixes` extend that same generated-only hard-rejection policy:
   - both are rendered into the prompt contract as explicit negative rules
   - generated stems starting with banned prefixes or ending with banned suffixes are rejected before lookup
+- `min_length` follows that same generated-only pattern:
+  - it is rendered into the prompt contract as a minimum-length rule
+  - generated stems shorter than the configured minimum are hard-rejected after normalization
+  - run-level diagnostics report these rejections as `too_short`
 - `generate.quality_profile` is a generated-only taste filter:
   - `industrial` now more aggressively favors stronger, harder-edged infrastructure-like name shapes
   - compact 5-7 letter forms, denser consonant structure, stronger consonant anchors, and harder endings score positively

@@ -34,6 +34,7 @@ type GenerateConfig struct {
 	MaxAttemptsPerBatch int
 	RetryCount          int
 	QualityProfile      string
+	MinLength           int
 	MaxLength           int
 	MaxSyllables        int
 	Suffix              string
@@ -60,6 +61,7 @@ type CLIOverrides struct {
 	GenerateAdaptiveRefill      bool
 	GenerateMinBatchSize        int
 	GenerateQualityProfile      string
+	GenerateMinLength           int
 	GenerateMaxLength           int
 	GenerateMaxSyllables        int
 	GenerateSuffix              string
@@ -85,6 +87,7 @@ type fileConfig struct {
 	GenerateMaxAttempts         int
 	GenerateRetryCount          int
 	GenerateQualityProfile      string
+	GenerateMinLength           int
 	GenerateMaxLength           int
 	GenerateMaxSyllables        int
 	GenerateSuffix              string
@@ -186,6 +189,13 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_QUALITY_PROFILE"); ok && value != "" {
 		cfg.Generate.QualityProfile = strings.TrimSpace(value)
 	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_MIN_LENGTH"); ok && value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_MIN_LENGTH: %w", err)
+		}
+		cfg.Generate.MinLength = parsed
+	}
 	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_MAX_LENGTH"); ok && value != "" {
 		parsed, err := strconv.Atoi(value)
 		if err != nil {
@@ -265,6 +275,9 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	if cli.GenerateQualityProfile != "" {
 		cfg.Generate.QualityProfile = strings.TrimSpace(cli.GenerateQualityProfile)
 	}
+	if cli.GenerateMinLength > 0 {
+		cfg.Generate.MinLength = cli.GenerateMinLength
+	}
 	if cli.GenerateMaxLength > 0 {
 		cfg.Generate.MaxLength = cli.GenerateMaxLength
 	}
@@ -335,6 +348,9 @@ func applyFileConfig(cfg *Config, fc fileConfig) {
 	}
 	if fc.GenerateQualityProfile != "" {
 		cfg.Generate.QualityProfile = strings.TrimSpace(fc.GenerateQualityProfile)
+	}
+	if fc.GenerateMinLength > 0 {
+		cfg.Generate.MinLength = fc.GenerateMinLength
 	}
 	if fc.GenerateMaxLength > 0 {
 		cfg.Generate.MaxLength = fc.GenerateMaxLength
@@ -453,6 +469,12 @@ func loadFile(path string) (fileConfig, error) {
 			cfg.GenerateRetryCount = parsed
 		case "generate.quality_profile":
 			cfg.GenerateQualityProfile = value
+		case "generate.min_length":
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return fileConfig{}, fmt.Errorf("parse %s generate.min_length: %w", path, err)
+			}
+			cfg.GenerateMinLength = parsed
 		case "generate.max_length":
 			parsed, err := strconv.Atoi(value)
 			if err != nil {

@@ -47,6 +47,25 @@ func TestAddGeneratedReportLimitedRejectsAvoidPrefixesAndSuffixes(t *testing.T) 
 	}
 }
 
+func TestAddGeneratedReportLimitedRejectsTooShortGeneratedStems(t *testing.T) {
+	collector := NewCollector()
+	report := collector.AddGeneratedReportLimited([]string{
+		"nova",
+		"qentil",
+		"ax",
+	}, 3, GeneratedPolicy{MinLength: 6})
+
+	if report.TooShort != 2 {
+		t.Fatalf("TooShort = %d, want 2", report.TooShort)
+	}
+	if report.LexicalRejected != 2 {
+		t.Fatalf("LexicalRejected = %d, want 2", report.LexicalRejected)
+	}
+	if len(report.Accepted) != 1 || report.Accepted[0] != "qentil" {
+		t.Fatalf("Accepted = %#v, want [qentil]", report.Accepted)
+	}
+}
+
 func TestAddGeneratedReportLimitedRejectsWeakQuality(t *testing.T) {
 	collector := NewCollector()
 	report := collector.AddGeneratedReportLimited([]string{

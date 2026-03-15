@@ -898,6 +898,7 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 		"  adaptive_refill: true\n" +
 		"  min_batch_size: 1\n" +
 		"  quality_profile: industrial\n" +
+		"  min_length: 6\n" +
 		"  max_length: 9\n" +
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
@@ -916,9 +917,7 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 
 	generator := &fakeStemGenerator{
 		responses: []fakeStemResponse{
-			{result: openai.BatchResult{Stems: []string{"shieldr", "trynex"}}},
-			{result: openai.BatchResult{Stems: []string{"noviq", "tractix"}}},
-			{result: openai.BatchResult{Stems: []string{"secbase"}}},
+			{result: openai.BatchResult{Stems: []string{"shieldr", "traktor"}}},
 		},
 	}
 
@@ -942,7 +941,8 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
 		"-zone", "com=" + fixturePath("small", "com.zone"),
 		"-generate", "invented security stems",
-		"-generate-count", "5",
+		"-generate-count", "2",
+		"-generate-min-length", "7",
 		"-generate-max-length", "12",
 		"-generate-prefix", "sec",
 		"-generate-style", "invented SaaS",
@@ -952,8 +952,8 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	if captured.Count != 5 {
-		t.Fatalf("captured.Count = %d, want 5", captured.Count)
+	if captured.Count != 2 {
+		t.Fatalf("captured.Count = %d, want 2", captured.Count)
 	}
 	if captured.BatchSize != 2 {
 		t.Fatalf("captured.BatchSize = %d, want 2 from config", captured.BatchSize)
@@ -963,6 +963,9 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 	}
 	if captured.QualityProfile != "industrial" {
 		t.Fatalf("captured.QualityProfile = %q, want industrial from config", captured.QualityProfile)
+	}
+	if captured.MinLength != 7 {
+		t.Fatalf("captured.MinLength = %d, want 7 from CLI", captured.MinLength)
 	}
 	if captured.MaxLength != 12 {
 		t.Fatalf("captured.MaxLength = %d, want 12 from CLI", captured.MaxLength)
@@ -991,12 +994,12 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 	if captured.MaxCostUSD != 0.50 || captured.TargetAvailableHits != 6 || captured.TargetStrongHits != 4 || captured.MaxStallBatches != 5 {
 		t.Fatalf("captured stop conditions = %#v, want cost/strong/stall from config", captured)
 	}
-	if len(generator.calls) != 2 || generator.calls[0] != 2 || generator.calls[1] != 2 {
-		t.Fatalf("generator calls = %#v, want [2 2]", generator.calls)
+	if len(generator.calls) != 1 || generator.calls[0] != 2 {
+		t.Fatalf("generator calls = %#v, want [2]", generator.calls)
 	}
 	progress := stderr.String()
-	if !strings.Contains(progress, "generation: complete, accepted 4 stems") || !strings.Contains(progress, "stop strong-hit target reached") {
-		t.Fatalf("stderr = %q, want stop-aware generation completion", progress)
+	if !strings.Contains(progress, "generation: complete, accepted 2 stems") {
+		t.Fatalf("stderr = %q, want generation completion", progress)
 	}
 }
 
@@ -1013,6 +1016,7 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"  max_attempts: 3\n" +
 		"  retry_count: 1\n" +
 		"  quality_profile: industrial\n" +
+		"  min_length: 6\n" +
 		"  max_length: 10\n" +
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
@@ -1065,6 +1069,7 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"max_attempts: 3",
 		"retry_count: 1",
 		"quality_profile: industrial",
+		"min_length: 6",
 		"theme: short product stems",
 		"style: security product",
 		"max_length: 10",
@@ -1099,6 +1104,7 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"  adaptive_refill: true\n" +
 		"  min_batch_size: 1\n" +
 		"  quality_profile: industrial\n" +
+		"  min_length: 6\n" +
 		"  max_length: 9\n" +
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
@@ -1137,6 +1143,7 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"-generate-adaptive-refill",
 		"-generate-min-batch-size", "2",
 		"-generate-quality-profile", "off",
+		"-generate-min-length", "7",
 		"-generate-max-length", "12",
 		"-generate-max-syllables", "3",
 		"-generate-prefix", "dev",
@@ -1162,6 +1169,7 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"adaptive_refill: true",
 		"min_batch_size: 2",
 		"quality_profile: off",
+		"min_length: 7",
 		"max_length: 12",
 		"max_syllables: 3",
 		"prefix: dev",
@@ -1197,6 +1205,7 @@ func TestRunGenerateDryRunJSONOutput(t *testing.T) {
 		"  max_attempts: 3\n" +
 		"  retry_count: 1\n" +
 		"  quality_profile: industrial\n" +
+		"  min_length: 6\n" +
 		"  max_length: 10\n" +
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
@@ -1255,7 +1264,7 @@ func TestRunGenerateDryRunJSONOutput(t *testing.T) {
 	if !ok {
 		t.Fatalf("constraints = %#v, want object", got["constraints"])
 	}
-	if constraints["max_length"] != float64(10) || constraints["max_syllables"] != float64(2) || constraints["prefix"] != "neo" || constraints["suffix"] != "ix" {
+	if constraints["min_length"] != float64(6) || constraints["max_length"] != float64(10) || constraints["max_syllables"] != float64(2) || constraints["prefix"] != "neo" || constraints["suffix"] != "ix" {
 		t.Fatalf("constraints = %#v, want stable constraint shape", constraints)
 	}
 	avoidPrefixes := constraints["avoid_prefixes"].([]any)
@@ -1288,6 +1297,7 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		"  adaptive_refill: true\n" +
 		"  min_batch_size: 1\n" +
 		"  quality_profile: industrial\n" +
+		"  min_length: 6\n" +
 		"  max_length: 9\n" +
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
@@ -1319,6 +1329,7 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		"-generate-adaptive-refill",
 		"-generate-min-batch-size", "2",
 		"-generate-quality-profile", "off",
+		"-generate-min-length", "7",
 		"-generate-max-length", "12",
 		"-generate-max-syllables", "3",
 		"-generate-prefix", "dev",
@@ -1346,7 +1357,7 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		t.Fatalf("quality_profile = %#v, want off", got["quality_profile"])
 	}
 	constraints := got["constraints"].(map[string]any)
-	if constraints["max_length"] != float64(12) || constraints["max_syllables"] != float64(3) || constraints["prefix"] != "dev" || constraints["suffix"] != "io" {
+	if constraints["min_length"] != float64(7) || constraints["max_length"] != float64(12) || constraints["max_syllables"] != float64(3) || constraints["prefix"] != "dev" || constraints["suffix"] != "io" {
 		t.Fatalf("constraints = %#v, want CLI override values", constraints)
 	}
 	avoidPrefixes := constraints["avoid_prefixes"].([]any)
@@ -1427,6 +1438,53 @@ func TestRunTextWorkflowRejectsBannedGeneratedStems(t *testing.T) {
 		"generation diagnostics",
 		"banned_substring: 2",
 	} {
+		if !strings.Contains(stderr.String(), fragment) {
+			t.Fatalf("stderr missing %q:\n%s", fragment, stderr.String())
+		}
+	}
+}
+
+func TestRunTextWorkflowRejectsTooShortGeneratedStems(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  min_length: 6\n  quality_profile: off\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		responses: []fakeStemResponse{
+			{result: openai.BatchResult{Stems: []string{"nova", "qentil"}}},
+			{result: openai.BatchResult{Stems: []string{"ax", "trynex"}}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-generate", "industrial infrastructure names",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if strings.Contains(stdout.String(), "nova") || strings.Contains(stdout.String(), "ax") {
+		t.Fatalf("stdout = %q, want too-short generated stems rejected before lookup", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "qentil\n") || !strings.Contains(stdout.String(), "trynex\n") {
+		t.Fatalf("stdout = %q, want accepted generated stems only", stdout.String())
+	}
+	for _, fragment := range []string{"generation diagnostics", "too_short: 2"} {
 		if !strings.Contains(stderr.String(), fragment) {
 			t.Fatalf("stderr missing %q:\n%s", fragment, stderr.String())
 		}

@@ -11,6 +11,7 @@ func TestGenerationDiagnosticsMergeAndLines(t *testing.T) {
 		Invalid:          2,
 		Duplicates:       3,
 		LexicalRejected:  7,
+		TooShort:         2,
 		BannedSubstrings: 4,
 		BannedPrefixes:   2,
 		BannedSuffixes:   1,
@@ -32,6 +33,7 @@ func TestGenerationDiagnosticsMergeAndLines(t *testing.T) {
 
 	want := []string{
 		"generation diagnostics",
+		"  too_short: 2",
 		"  banned_substring: 4",
 		"  banned_prefix: 2",
 		"  banned_suffix: 1",

@@ -18,6 +18,7 @@ type BatchReport struct {
 	Accepted         []string
 	Invalid          int
 	Duplicates       int
+	TooShort         int
 	BannedPrefixes   int
 	BannedSuffixes   int
 	BannedSubstrings int
@@ -33,6 +34,7 @@ type GeneratedPolicy struct {
 	AvoidSubstrings []string
 	AvoidPrefixes   []string
 	AvoidSuffixes   []string
+	MinLength       int
 	QualityProfile  string
 	FamilyLimit     int
 }
@@ -100,6 +102,11 @@ func (c *Collector) AddGeneratedReportLimited(raws []string, limit int, policy G
 		normalized, err := NormalizeCandidate(raw)
 		if err != nil {
 			report.Invalid++
+			continue
+		}
+		if policy.MinLength > 0 && len(normalized) < policy.MinLength {
+			report.TooShort++
+			report.LexicalRejected++
 			continue
 		}
 		if containsAvoidSubstring(normalized, policy.AvoidSubstrings) {

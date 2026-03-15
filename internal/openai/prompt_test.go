@@ -14,6 +14,7 @@ func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 		QualityProfile:      "industrial",
 		Theme:               "invented product names",
 		Style:               "developer tool",
+		MinLength:           6,
 		MaxLength:           12,
 		MaxSyllables:        3,
 		Prefix:              "dev",
@@ -35,6 +36,7 @@ func TestPromptBuilderWithMultipleConstraints(t *testing.T) {
 		"Style: developer tool",
 		"Quality profile: industrial",
 		"infrastructure-like stems",
+		"at least 6 letters",
 		"no more than 12 letters",
 		"no more than 3 syllables",
 		"start with `dev`",
@@ -65,6 +67,7 @@ func TestNewPromptInputFromConfig(t *testing.T) {
 	got := NewPromptInput("security names", config.GenerateConfig{
 		QualityProfile:      "industrial",
 		Style:               "security product",
+		MinLength:           6,
 		MaxLength:           10,
 		MaxSyllables:        2,
 		Prefix:              "sec",
@@ -80,7 +83,7 @@ func TestNewPromptInputFromConfig(t *testing.T) {
 		MinBatchSize:        2,
 	})
 
-	if got.QualityProfile != "industrial" || got.Theme != "security names" || got.Style != "security product" || got.MaxLength != 10 || got.MaxSyllables != 2 || got.Prefix != "sec" || got.Suffix != "ix" || len(got.AvoidSubstrings) != 2 || len(got.AvoidPrefixes) != 1 || len(got.AvoidSuffixes) != 2 || got.MaxCostUSD != 0.75 || got.TargetAvailableHits != 4 || got.TargetStrongHits != 5 || got.MaxStallBatches != 3 || !got.AdaptiveRefill || got.MinBatchSize != 2 {
+	if got.QualityProfile != "industrial" || got.Theme != "security names" || got.Style != "security product" || got.MinLength != 6 || got.MaxLength != 10 || got.MaxSyllables != 2 || got.Prefix != "sec" || got.Suffix != "ix" || len(got.AvoidSubstrings) != 2 || len(got.AvoidPrefixes) != 1 || len(got.AvoidSuffixes) != 2 || got.MaxCostUSD != 0.75 || got.TargetAvailableHits != 4 || got.TargetStrongHits != 5 || got.MaxStallBatches != 3 || !got.AdaptiveRefill || got.MinBatchSize != 2 {
 		t.Fatalf("NewPromptInput() = %#v, want populated constraint input", got)
 	}
 }
@@ -97,6 +100,7 @@ func TestBuildContractAndRender(t *testing.T) {
 			MaxAttemptsPerBatch: 3,
 			RetryCount:          2,
 			QualityProfile:      "industrial",
+			MinLength:           6,
 			MaxLength:           12,
 			MaxSyllables:        3,
 			Prefix:              "dev",
@@ -129,6 +133,7 @@ func TestBuildContractAndRender(t *testing.T) {
 		"quality_profile: industrial",
 		"theme: short product name stems",
 		"style: developer tool",
+		"min_length: 6",
 		"max_length: 12",
 		"max_syllables: 3",
 		"prefix: dev",
@@ -169,6 +174,7 @@ func TestRenderContractJSON(t *testing.T) {
 			MaxAttemptsPerBatch: 3,
 			RetryCount:          2,
 			QualityProfile:      "industrial",
+			MinLength:           6,
 			MaxLength:           12,
 			MaxSyllables:        3,
 			Prefix:              "dev",
@@ -215,7 +221,7 @@ func TestRenderContractJSON(t *testing.T) {
 	if !ok {
 		t.Fatalf("constraints = %#v, want object", got["constraints"])
 	}
-	if constraints["max_length"] != float64(12) || constraints["prefix"] != "dev" || constraints["suffix"] != "io" {
+	if constraints["min_length"] != float64(6) || constraints["max_length"] != float64(12) || constraints["prefix"] != "dev" || constraints["suffix"] != "io" {
 		t.Fatalf("constraints = %#v, want populated stable constraint object", constraints)
 	}
 	avoid := constraints["avoid_substrings"].([]any)

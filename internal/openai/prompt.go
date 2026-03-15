@@ -17,6 +17,7 @@ type PromptInput struct {
 	QualityProfile      string
 	Theme               string
 	Style               string
+	MinLength           int
 	MaxLength           int
 	MaxSyllables        int
 	Prefix              string
@@ -46,6 +47,7 @@ type Contract struct {
 	QualityProfile      string
 	Theme               string
 	Style               string
+	MinLength           int
 	MaxLength           int
 	MaxSyllables        int
 	Prefix              string
@@ -69,6 +71,7 @@ func NewPromptInput(theme string, generate config.GenerateConfig) PromptInput {
 		QualityProfile:      strings.TrimSpace(generate.QualityProfile),
 		Theme:               strings.TrimSpace(theme),
 		Style:               strings.TrimSpace(generate.Style),
+		MinLength:           generate.MinLength,
 		MaxLength:           generate.MaxLength,
 		MaxSyllables:        generate.MaxSyllables,
 		Prefix:              strings.TrimSpace(generate.Prefix),
@@ -98,6 +101,7 @@ func (b PromptBuilder) BuildContract(cfg config.Config, theme string) Contract {
 		QualityProfile:      input.QualityProfile,
 		Theme:               input.Theme,
 		Style:               input.Style,
+		MinLength:           input.MinLength,
 		MaxLength:           input.MaxLength,
 		MaxSyllables:        input.MaxSyllables,
 		Prefix:              input.Prefix,
@@ -133,6 +137,9 @@ func (PromptBuilder) BuildUserPrompt(input PromptInput, count int) string {
 	if input.QualityProfile == genquality.ProfileIndustrial {
 		lines = append(lines, "Quality profile: industrial. Prefer compact, harder-edged, infrastructure-like stems with stronger consonant anchors, denser consonant structure, and harder final consonants.")
 		lines = append(lines, "Favor compact 5-7 letter company-name shapes and avoid soft startup-mush, pharma/biotech-like endings, weak generic enterprise-tech shapes, and repetitive same-family near variants.")
+	}
+	if input.MinLength > 0 {
+		lines = append(lines, fmt.Sprintf("Constraint: each stem must be at least %d letters.", input.MinLength))
 	}
 	if input.MaxLength > 0 {
 		lines = append(lines, fmt.Sprintf("Constraint: each stem must be no more than %d letters.", input.MaxLength))
@@ -186,6 +193,7 @@ func RenderContract(contract Contract) string {
 	fmt.Fprintf(&out, "  quality_profile: %s\n", renderOptional(contract.QualityProfile))
 	fmt.Fprintf(&out, "  theme: %s\n", renderOptional(contract.Theme))
 	fmt.Fprintf(&out, "  style: %s\n", renderOptional(contract.Style))
+	fmt.Fprintf(&out, "  min_length: %s\n", renderOptionalInt(contract.MinLength))
 	fmt.Fprintf(&out, "  max_length: %s\n", renderOptionalInt(contract.MaxLength))
 	fmt.Fprintf(&out, "  max_syllables: %s\n", renderOptionalInt(contract.MaxSyllables))
 	fmt.Fprintf(&out, "  prefix: %s\n", renderOptional(contract.Prefix))
@@ -212,6 +220,7 @@ func RenderContract(contract Contract) string {
 // the fully resolved generation contract.
 func RenderContractJSON(contract Contract) ([]byte, error) {
 	type constraints struct {
+		MinLength           int      `json:"min_length,omitempty"`
 		MaxLength           int      `json:"max_length,omitempty"`
 		MaxSyllables        int      `json:"max_syllables,omitempty"`
 		Prefix              string   `json:"prefix,omitempty"`
@@ -250,6 +259,7 @@ func RenderContractJSON(contract Contract) ([]byte, error) {
 		Theme:          contract.Theme,
 		Style:          contract.Style,
 		Constraints: constraints{
+			MinLength:           contract.MinLength,
 			MaxLength:           contract.MaxLength,
 			MaxSyllables:        contract.MaxSyllables,
 			Prefix:              contract.Prefix,

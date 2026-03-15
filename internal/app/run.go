@@ -63,6 +63,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	generateAdaptiveRefill := fs.Bool("generate-adaptive-refill", false, "shrink effective generation batch size after repeated underfilled batches")
 	generateMinBatchSize := fs.Int("generate-min-batch-size", 0, "minimum effective batch size when adaptive refill is enabled")
 	generateQualityProfile := fs.String("generate-quality-profile", "", "generated-stem quality profile: industrial | off")
+	generateMinLength := fs.Int("generate-min-length", 0, "minimum letters per generated stem")
 	generateMaxLength := fs.Int("generate-max-length", 0, "preferred maximum letters per generated stem")
 	generateMaxSyllables := fs.Int("generate-max-syllables", 0, "preferred maximum syllables per generated stem")
 	generateSuffix := fs.String("generate-suffix", "", "prefer generated stems ending with this text")
@@ -183,6 +184,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			GenerateAdaptiveRefill:      *generateAdaptiveRefill,
 			GenerateMinBatchSize:        *generateMinBatchSize,
 			GenerateQualityProfile:      strings.TrimSpace(*generateQualityProfile),
+			GenerateMinLength:           *generateMinLength,
 			GenerateMaxLength:           *generateMaxLength,
 			GenerateMaxSyllables:        *generateMaxSyllables,
 			GenerateSuffix:              strings.TrimSpace(*generateSuffix),
@@ -515,6 +517,7 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 			AvoidSubstrings: cfg.Generate.AvoidSubstrings,
 			AvoidPrefixes:   cfg.Generate.AvoidPrefixes,
 			AvoidSuffixes:   cfg.Generate.AvoidSuffixes,
+			MinLength:       cfg.Generate.MinLength,
 			QualityProfile:  cfg.Generate.QualityProfile,
 		})
 		diagnostics.MergeBatch(report)
@@ -739,6 +742,7 @@ func buildRunSummary(backendName string, requestedZones []string, filterMode rep
 			MaxAttempts:             cfg.Generate.MaxAttemptsPerBatch,
 			RetryCount:              cfg.Generate.RetryCount,
 			QualityProfile:          cfg.Generate.QualityProfile,
+			MinLength:               cfg.Generate.MinLength,
 			AvoidSubstrings:         append([]string(nil), cfg.Generate.AvoidSubstrings...),
 			AvoidPrefixes:           append([]string(nil), cfg.Generate.AvoidPrefixes...),
 			AvoidSuffixes:           append([]string(nil), cfg.Generate.AvoidSuffixes...),

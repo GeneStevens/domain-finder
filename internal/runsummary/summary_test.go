@@ -12,6 +12,7 @@ func TestNewDiagnosticsSortsReasons(t *testing.T) {
 	got := NewDiagnostics(candidates.GenerationDiagnostics{
 		Invalid:          1,
 		Banned:           5,
+		TooShort:         2,
 		BannedSubstrings: 2,
 		BannedPrefixes:   1,
 		BannedSuffixes:   2,
@@ -35,6 +36,9 @@ func TestNewDiagnosticsSortsReasons(t *testing.T) {
 	}
 	if got.QualityReasons[1].Reason != "pharma_like_suffix" || got.QualityReasons[1].Count != 4 {
 		t.Fatalf("QualityReasons[1] = %#v, want pharma_like_suffix/4", got.QualityReasons[1])
+	}
+	if got.TooShort != 2 {
+		t.Fatalf("TooShort = %d, want 2", got.TooShort)
 	}
 }
 
@@ -61,6 +65,7 @@ func TestWriteArtifactJSON(t *testing.T) {
 			MaxAttempts:             3,
 			RetryCount:              2,
 			QualityProfile:          "industrial",
+			MinLength:               6,
 			AvoidPrefixes:           []string{"dev", "neo"},
 			AvoidSuffixes:           []string{"ia", "ora"},
 			MaxCostUSD:              1.00,
@@ -108,6 +113,9 @@ func TestWriteArtifactJSON(t *testing.T) {
 	}
 	if _, ok := generation["avoid_suffixes"]; !ok {
 		t.Fatalf("generation = %#v, want avoid_suffixes", generation)
+	}
+	if generation["min_length"] != float64(6) {
+		t.Fatalf("generation = %#v, want min_length", generation)
 	}
 	if generation["max_cost_usd"] != float64(1) || generation["target_available_hits"] != float64(6) || generation["target_strong_hits"] != float64(3) || generation["max_stall_batches"] != float64(4) {
 		t.Fatalf("generation = %#v, want stop condition fields", generation)

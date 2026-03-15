@@ -34,6 +34,7 @@ type Generation struct {
 	MaxAttempts             int      `json:"max_attempts"`
 	RetryCount              int      `json:"retry_count"`
 	QualityProfile          string   `json:"quality_profile,omitempty"`
+	MinLength               int      `json:"min_length,omitempty"`
 	AvoidSubstrings         []string `json:"avoid_substrings,omitempty"`
 	AvoidPrefixes           []string `json:"avoid_prefixes,omitempty"`
 	AvoidSuffixes           []string `json:"avoid_suffixes,omitempty"`
@@ -56,6 +57,7 @@ type Generation struct {
 type Diagnostics struct {
 	Invalid          int           `json:"invalid"`
 	Banned           int           `json:"banned"`
+	TooShort         int           `json:"too_short,omitempty"`
 	BannedSubstrings int           `json:"banned_substrings,omitempty"`
 	BannedPrefixes   int           `json:"banned_prefixes,omitempty"`
 	BannedSuffixes   int           `json:"banned_suffixes,omitempty"`
@@ -87,6 +89,7 @@ func NewDiagnostics(source candidates.GenerationDiagnostics) *Diagnostics {
 	return &Diagnostics{
 		Invalid:          source.Invalid,
 		Banned:           source.Banned,
+		TooShort:         source.TooShort,
 		BannedSubstrings: source.BannedSubstrings,
 		BannedPrefixes:   source.BannedPrefixes,
 		BannedSuffixes:   source.BannedSuffixes,
