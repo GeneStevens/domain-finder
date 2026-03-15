@@ -29,7 +29,9 @@ generate:
   target_strong_hits: 25
   max_stall_batches: 8
   quality_profile: industrial
+  phonetic_quality: strict
   min_length: 6
+  min_score: 70
   max_length: 10
   max_syllables: 3
   prefix: ""

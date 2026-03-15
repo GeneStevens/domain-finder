@@ -34,7 +34,9 @@ type Generation struct {
 	MaxAttempts             int      `json:"max_attempts"`
 	RetryCount              int      `json:"retry_count"`
 	QualityProfile          string   `json:"quality_profile,omitempty"`
+	PhoneticQuality         string   `json:"phonetic_quality,omitempty"`
 	MinLength               int      `json:"min_length,omitempty"`
+	MinScore                int      `json:"min_score,omitempty"`
 	AvoidSubstrings         []string `json:"avoid_substrings,omitempty"`
 	AvoidPrefixes           []string `json:"avoid_prefixes,omitempty"`
 	AvoidSuffixes           []string `json:"avoid_suffixes,omitempty"`
@@ -55,16 +57,20 @@ type Generation struct {
 }
 
 type Diagnostics struct {
-	Invalid          int           `json:"invalid"`
-	Banned           int           `json:"banned"`
-	TooShort         int           `json:"too_short,omitempty"`
-	BannedSubstrings int           `json:"banned_substrings,omitempty"`
-	BannedPrefixes   int           `json:"banned_prefixes,omitempty"`
-	BannedSuffixes   int           `json:"banned_suffixes,omitempty"`
-	QualityRejected  int           `json:"quality_rejected"`
-	FamilyRejected   int           `json:"family_rejected,omitempty"`
-	Duplicates       int           `json:"duplicates"`
-	QualityReasons   []ReasonCount `json:"quality_reasons,omitempty"`
+	Invalid            int           `json:"invalid"`
+	Banned             int           `json:"banned"`
+	TooShort           int           `json:"too_short,omitempty"`
+	ScoreRejected      int           `json:"score_rejected,omitempty"`
+	PhoneticRejected   int           `json:"phonetic_rejected,omitempty"`
+	StructuralRejected int           `json:"structural_rejected,omitempty"`
+	BannedSubstrings   int           `json:"banned_substrings,omitempty"`
+	BannedPrefixes     int           `json:"banned_prefixes,omitempty"`
+	BannedSuffixes     int           `json:"banned_suffixes,omitempty"`
+	QualityRejected    int           `json:"quality_rejected"`
+	FamilyRejected     int           `json:"family_rejected,omitempty"`
+	Duplicates         int           `json:"duplicates"`
+	QualityReasons     []ReasonCount `json:"quality_reasons,omitempty"`
+	ScoreBuckets       []ReasonCount `json:"score_buckets,omitempty"`
 }
 
 type ReasonCount struct {
@@ -80,23 +86,34 @@ func NewDiagnostics(source candidates.GenerationDiagnostics) *Diagnostics {
 	for reason, count := range source.QualityReasons {
 		reasons = append(reasons, ReasonCount{Reason: reason, Count: count})
 	}
+	scoreBuckets := make([]ReasonCount, 0, len(source.ScoreBuckets))
+	for bucket, count := range source.ScoreBuckets {
+		scoreBuckets = append(scoreBuckets, ReasonCount{Reason: bucket, Count: count})
+	}
 	sort.Slice(reasons, func(i, j int) bool {
 		if reasons[i].Count != reasons[j].Count {
 			return reasons[i].Count > reasons[j].Count
 		}
 		return reasons[i].Reason < reasons[j].Reason
 	})
+	sort.Slice(scoreBuckets, func(i, j int) bool {
+		return scoreBuckets[i].Reason < scoreBuckets[j].Reason
+	})
 	return &Diagnostics{
-		Invalid:          source.Invalid,
-		Banned:           source.Banned,
-		TooShort:         source.TooShort,
-		BannedSubstrings: source.BannedSubstrings,
-		BannedPrefixes:   source.BannedPrefixes,
-		BannedSuffixes:   source.BannedSuffixes,
-		QualityRejected:  source.QualityRejected,
-		FamilyRejected:   source.FamilyRejected,
-		Duplicates:       source.Duplicates,
-		QualityReasons:   reasons,
+		Invalid:            source.Invalid,
+		Banned:             source.Banned,
+		TooShort:           source.TooShort,
+		ScoreRejected:      source.ScoreRejected,
+		PhoneticRejected:   source.PhoneticRejected,
+		StructuralRejected: source.StructuralRejected,
+		BannedSubstrings:   source.BannedSubstrings,
+		BannedPrefixes:     source.BannedPrefixes,
+		BannedSuffixes:     source.BannedSuffixes,
+		QualityRejected:    source.QualityRejected,
+		FamilyRejected:     source.FamilyRejected,
+		Duplicates:         source.Duplicates,
+		QualityReasons:     reasons,
+		ScoreBuckets:       scoreBuckets,
 	}
 }
 

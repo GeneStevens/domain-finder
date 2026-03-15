@@ -66,6 +66,35 @@ func TestAddGeneratedReportLimitedRejectsTooShortGeneratedStems(t *testing.T) {
 	}
 }
 
+func TestAddGeneratedReportLimitedRejectsLowScoreGeneratedStems(t *testing.T) {
+	collector := NewCollector()
+	report := collector.AddGeneratedReportLimited([]string{
+		"crux",
+		"fortis",
+		"vargphlix",
+	}, 3, GeneratedPolicy{
+		MinScore:        50,
+		PhoneticQuality: "normal",
+		QualityProfile:  "off",
+	})
+
+	if report.ScoreRejected != 1 {
+		t.Fatalf("ScoreRejected = %d, want 1", report.ScoreRejected)
+	}
+	if report.PhoneticRejected != 1 {
+		t.Fatalf("PhoneticRejected = %d, want 1", report.PhoneticRejected)
+	}
+	if report.LexicalRejected != 1 {
+		t.Fatalf("LexicalRejected = %d, want 1", report.LexicalRejected)
+	}
+	if len(report.Accepted) != 2 || report.Accepted[0] != "crux" || report.Accepted[1] != "fortis" {
+		t.Fatalf("Accepted = %#v, want [crux fortis]", report.Accepted)
+	}
+	if report.ScoreBuckets["30-49"] != 1 {
+		t.Fatalf("ScoreBuckets = %#v, want 30-49 bucket accounting", report.ScoreBuckets)
+	}
+}
+
 func TestAddGeneratedReportLimitedRejectsWeakQuality(t *testing.T) {
 	collector := NewCollector()
 	report := collector.AddGeneratedReportLimited([]string{

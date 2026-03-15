@@ -9,7 +9,7 @@ import (
 
 func TestLoadPrecedence(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, baseConfigName), []byte("openai:\n  model: base-model\npostgres:\n  dsn: postgres://base\ngenerate:\n  count: 5\n  batch_size: 2\n  adaptive_refill: true\n  min_batch_size: 1\n  quality_profile: industrial\n  min_length: 5\n  max_length: 8\n  suffix: ix\n  avoid_substrings: dev,cloud\n  avoid_prefixes: dev,neo\n  avoid_suffixes: ia,ora\n  max_cost_usd: 0.25\n  target_available_hits: 2\n  target_strong_hits: 3\n  max_stall_batches: 4\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, baseConfigName), []byte("openai:\n  model: base-model\npostgres:\n  dsn: postgres://base\ngenerate:\n  count: 5\n  batch_size: 2\n  adaptive_refill: true\n  min_batch_size: 1\n  quality_profile: industrial\n  phonetic_quality: normal\n  min_length: 5\n  min_score: 48\n  max_length: 8\n  suffix: ix\n  avoid_substrings: dev,cloud\n  avoid_prefixes: dev,neo\n  avoid_suffixes: ia,ora\n  max_cost_usd: 0.25\n  target_available_hits: 2\n  target_strong_hits: 3\n  max_stall_batches: 4\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, localConfigName), []byte("openai:\n  api_key: local-key\n  model: local-model\ngenerate:\n  count: 7\n  max_attempts: 4\n  retry_count: 1\n  max_syllables: 2\n  prefix: neo\n  style: developer tool\n"), 0o644); err != nil {
@@ -23,7 +23,9 @@ func TestLoadPrecedence(t *testing.T) {
 		"DOMAINFINDER_GENERATE_MIN_BATCH_SIZE":        "3",
 		"DOMAINFINDER_GENERATE_RETRY_COUNT":           "5",
 		"DOMAINFINDER_GENERATE_QUALITY_PROFILE":       "off",
+		"DOMAINFINDER_GENERATE_PHONETIC_QUALITY":      "strict",
 		"DOMAINFINDER_GENERATE_MIN_LENGTH":            "6",
+		"DOMAINFINDER_GENERATE_MIN_SCORE":             "62",
 		"DOMAINFINDER_GENERATE_SUFFIX":                "io",
 		"DOMAINFINDER_GENERATE_AVOID_SUBSTRINGS":      "stack,forge",
 		"DOMAINFINDER_GENERATE_AVOID_PREFIXES":        "dev,neo",
@@ -43,7 +45,9 @@ func TestLoadPrecedence(t *testing.T) {
 		GenerateAdaptiveRefill:      true,
 		GenerateMinBatchSize:        2,
 		GenerateQualityProfile:      "industrial",
+		GeneratePhoneticQuality:     "normal",
 		GenerateMinLength:           7,
+		GenerateMinScore:            68,
 		GenerateMaxLength:           12,
 		GenerateMaxSyllables:        3,
 		GeneratePrefix:              "dev",
@@ -88,8 +92,14 @@ func TestLoadPrecedence(t *testing.T) {
 	if cfg.Generate.QualityProfile != "industrial" {
 		t.Fatalf("Generate.QualityProfile = %q, want industrial", cfg.Generate.QualityProfile)
 	}
+	if cfg.Generate.PhoneticQuality != "normal" {
+		t.Fatalf("Generate.PhoneticQuality = %q, want normal", cfg.Generate.PhoneticQuality)
+	}
 	if cfg.Generate.MinLength != 7 {
 		t.Fatalf("Generate.MinLength = %d, want 7", cfg.Generate.MinLength)
+	}
+	if cfg.Generate.MinScore != 68 {
+		t.Fatalf("Generate.MinScore = %d, want 68", cfg.Generate.MinScore)
 	}
 	if cfg.Generate.MaxLength != 12 {
 		t.Fatalf("Generate.MaxLength = %d, want 12", cfg.Generate.MaxLength)

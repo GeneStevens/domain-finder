@@ -34,7 +34,9 @@ type GenerateConfig struct {
 	MaxAttemptsPerBatch int
 	RetryCount          int
 	QualityProfile      string
+	PhoneticQuality     string
 	MinLength           int
+	MinScore            int
 	MaxLength           int
 	MaxSyllables        int
 	Suffix              string
@@ -61,7 +63,9 @@ type CLIOverrides struct {
 	GenerateAdaptiveRefill      bool
 	GenerateMinBatchSize        int
 	GenerateQualityProfile      string
+	GeneratePhoneticQuality     string
 	GenerateMinLength           int
+	GenerateMinScore            int
 	GenerateMaxLength           int
 	GenerateMaxSyllables        int
 	GenerateSuffix              string
@@ -87,7 +91,9 @@ type fileConfig struct {
 	GenerateMaxAttempts         int
 	GenerateRetryCount          int
 	GenerateQualityProfile      string
+	GeneratePhoneticQuality     string
 	GenerateMinLength           int
+	GenerateMinScore            int
 	GenerateMaxLength           int
 	GenerateMaxSyllables        int
 	GenerateSuffix              string
@@ -117,6 +123,8 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 			MaxAttemptsPerBatch: 3,
 			RetryCount:          2,
 			QualityProfile:      "industrial",
+			PhoneticQuality:     "normal",
+			MinScore:            50,
 		},
 	}
 
@@ -189,12 +197,22 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_QUALITY_PROFILE"); ok && value != "" {
 		cfg.Generate.QualityProfile = strings.TrimSpace(value)
 	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_PHONETIC_QUALITY"); ok && value != "" {
+		cfg.Generate.PhoneticQuality = strings.TrimSpace(value)
+	}
 	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_MIN_LENGTH"); ok && value != "" {
 		parsed, err := strconv.Atoi(value)
 		if err != nil {
 			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_MIN_LENGTH: %w", err)
 		}
 		cfg.Generate.MinLength = parsed
+	}
+	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_MIN_SCORE"); ok && value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return Config{}, fmt.Errorf("parse DOMAINFINDER_GENERATE_MIN_SCORE: %w", err)
+		}
+		cfg.Generate.MinScore = parsed
 	}
 	if value, ok := lookupEnv("DOMAINFINDER_GENERATE_MAX_LENGTH"); ok && value != "" {
 		parsed, err := strconv.Atoi(value)
@@ -275,8 +293,14 @@ func Load(dir string, lookupEnv func(string) (string, bool), cli CLIOverrides) (
 	if cli.GenerateQualityProfile != "" {
 		cfg.Generate.QualityProfile = strings.TrimSpace(cli.GenerateQualityProfile)
 	}
+	if cli.GeneratePhoneticQuality != "" {
+		cfg.Generate.PhoneticQuality = strings.TrimSpace(cli.GeneratePhoneticQuality)
+	}
 	if cli.GenerateMinLength > 0 {
 		cfg.Generate.MinLength = cli.GenerateMinLength
+	}
+	if cli.GenerateMinScore > 0 {
+		cfg.Generate.MinScore = cli.GenerateMinScore
 	}
 	if cli.GenerateMaxLength > 0 {
 		cfg.Generate.MaxLength = cli.GenerateMaxLength
@@ -349,8 +373,14 @@ func applyFileConfig(cfg *Config, fc fileConfig) {
 	if fc.GenerateQualityProfile != "" {
 		cfg.Generate.QualityProfile = strings.TrimSpace(fc.GenerateQualityProfile)
 	}
+	if fc.GeneratePhoneticQuality != "" {
+		cfg.Generate.PhoneticQuality = strings.TrimSpace(fc.GeneratePhoneticQuality)
+	}
 	if fc.GenerateMinLength > 0 {
 		cfg.Generate.MinLength = fc.GenerateMinLength
+	}
+	if fc.GenerateMinScore > 0 {
+		cfg.Generate.MinScore = fc.GenerateMinScore
 	}
 	if fc.GenerateMaxLength > 0 {
 		cfg.Generate.MaxLength = fc.GenerateMaxLength
@@ -469,12 +499,20 @@ func loadFile(path string) (fileConfig, error) {
 			cfg.GenerateRetryCount = parsed
 		case "generate.quality_profile":
 			cfg.GenerateQualityProfile = value
+		case "generate.phonetic_quality":
+			cfg.GeneratePhoneticQuality = value
 		case "generate.min_length":
 			parsed, err := strconv.Atoi(value)
 			if err != nil {
 				return fileConfig{}, fmt.Errorf("parse %s generate.min_length: %w", path, err)
 			}
 			cfg.GenerateMinLength = parsed
+		case "generate.min_score":
+			parsed, err := strconv.Atoi(value)
+			if err != nil {
+				return fileConfig{}, fmt.Errorf("parse %s generate.min_score: %w", path, err)
+			}
+			cfg.GenerateMinScore = parsed
 		case "generate.max_length":
 			parsed, err := strconv.Atoi(value)
 			if err != nil {

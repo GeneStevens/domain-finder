@@ -726,7 +726,7 @@ func TestRunTextWorkflowToFileInteractive(t *testing.T) {
 
 func TestRunTextWorkflowWithGeneratedStems(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 4\n  batch_size: 2\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 4\n  batch_size: 2\n  min_score: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -821,7 +821,7 @@ func TestRunTextWorkflowWithGeneratedStems(t *testing.T) {
 
 func TestRunTextWorkflowInteractiveWithGeneratedStems(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 3\n  batch_size: 2\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 3\n  batch_size: 2\n  min_score: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -898,6 +898,7 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 		"  adaptive_refill: true\n" +
 		"  min_batch_size: 1\n" +
 		"  quality_profile: industrial\n" +
+		"  min_score: 1\n" +
 		"  min_length: 6\n" +
 		"  max_length: 9\n" +
 		"  max_syllables: 2\n" +
@@ -964,8 +965,14 @@ func TestRunGenerationConstraintsFlowIntoResolvedConfig(t *testing.T) {
 	if captured.QualityProfile != "industrial" {
 		t.Fatalf("captured.QualityProfile = %q, want industrial from config", captured.QualityProfile)
 	}
+	if captured.PhoneticQuality != "normal" {
+		t.Fatalf("captured.PhoneticQuality = %q, want default normal", captured.PhoneticQuality)
+	}
 	if captured.MinLength != 7 {
 		t.Fatalf("captured.MinLength = %d, want 7 from CLI", captured.MinLength)
+	}
+	if captured.MinScore != 1 {
+		t.Fatalf("captured.MinScore = %d, want 1 from config", captured.MinScore)
 	}
 	if captured.MaxLength != 12 {
 		t.Fatalf("captured.MaxLength = %d, want 12 from CLI", captured.MaxLength)
@@ -1016,7 +1023,9 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"  max_attempts: 3\n" +
 		"  retry_count: 1\n" +
 		"  quality_profile: industrial\n" +
+		"  phonetic_quality: normal\n" +
 		"  min_length: 6\n" +
+		"  min_score: 50\n" +
 		"  max_length: 10\n" +
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
@@ -1069,7 +1078,9 @@ func TestRunGenerateDryRunDoesNotRequireAPIKey(t *testing.T) {
 		"max_attempts: 3",
 		"retry_count: 1",
 		"quality_profile: industrial",
+		"phonetic_quality: normal",
 		"min_length: 6",
+		"min_score: 50",
 		"theme: short product stems",
 		"style: security product",
 		"max_length: 10",
@@ -1104,7 +1115,9 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"  adaptive_refill: true\n" +
 		"  min_batch_size: 1\n" +
 		"  quality_profile: industrial\n" +
+		"  phonetic_quality: normal\n" +
 		"  min_length: 6\n" +
+		"  min_score: 50\n" +
 		"  max_length: 9\n" +
 		"  max_syllables: 2\n" +
 		"  prefix: neo\n" +
@@ -1169,7 +1182,9 @@ func TestRunGenerateDryRunReflectsCLIOverrides(t *testing.T) {
 		"adaptive_refill: true",
 		"min_batch_size: 2",
 		"quality_profile: off",
+		"phonetic_quality: normal",
 		"min_length: 7",
+		"min_score: 50",
 		"max_length: 12",
 		"max_syllables: 3",
 		"prefix: dev",
@@ -1264,7 +1279,10 @@ func TestRunGenerateDryRunJSONOutput(t *testing.T) {
 	if !ok {
 		t.Fatalf("constraints = %#v, want object", got["constraints"])
 	}
-	if constraints["min_length"] != float64(6) || constraints["max_length"] != float64(10) || constraints["max_syllables"] != float64(2) || constraints["prefix"] != "neo" || constraints["suffix"] != "ix" {
+	if got["phonetic_quality"] != "normal" {
+		t.Fatalf("phonetic_quality = %#v, want normal", got["phonetic_quality"])
+	}
+	if constraints["min_length"] != float64(6) || constraints["min_score"] != float64(50) || constraints["max_length"] != float64(10) || constraints["max_syllables"] != float64(2) || constraints["prefix"] != "neo" || constraints["suffix"] != "ix" {
 		t.Fatalf("constraints = %#v, want stable constraint shape", constraints)
 	}
 	avoidPrefixes := constraints["avoid_prefixes"].([]any)
@@ -1357,7 +1375,10 @@ func TestRunGenerateDryRunJSONReflectsCLIOverrides(t *testing.T) {
 		t.Fatalf("quality_profile = %#v, want off", got["quality_profile"])
 	}
 	constraints := got["constraints"].(map[string]any)
-	if constraints["min_length"] != float64(7) || constraints["max_length"] != float64(12) || constraints["max_syllables"] != float64(3) || constraints["prefix"] != "dev" || constraints["suffix"] != "io" {
+	if got["phonetic_quality"] != "normal" {
+		t.Fatalf("phonetic_quality = %#v, want normal", got["phonetic_quality"])
+	}
+	if constraints["min_length"] != float64(7) || constraints["min_score"] != float64(50) || constraints["max_length"] != float64(12) || constraints["max_syllables"] != float64(3) || constraints["prefix"] != "dev" || constraints["suffix"] != "io" {
 		t.Fatalf("constraints = %#v, want CLI override values", constraints)
 	}
 	avoidPrefixes := constraints["avoid_prefixes"].([]any)
@@ -1393,7 +1414,7 @@ func TestRunGenerateDryRunRequiresPrompt(t *testing.T) {
 
 func TestRunTextWorkflowRejectsBannedGeneratedStems(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  avoid_substrings: dev,cloud\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  min_score: 1\n  avoid_substrings: dev,cloud\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1446,7 +1467,7 @@ func TestRunTextWorkflowRejectsBannedGeneratedStems(t *testing.T) {
 
 func TestRunTextWorkflowRejectsTooShortGeneratedStems(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  min_length: 6\n  quality_profile: off\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 2\n  min_score: 1\n  min_length: 6\n  quality_profile: off\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1485,6 +1506,55 @@ func TestRunTextWorkflowRejectsTooShortGeneratedStems(t *testing.T) {
 		t.Fatalf("stdout = %q, want accepted generated stems only", stdout.String())
 	}
 	for _, fragment := range []string{"generation diagnostics", "too_short: 2"} {
+		if !strings.Contains(stderr.String(), fragment) {
+			t.Fatalf("stderr missing %q:\n%s", fragment, stderr.String())
+		}
+	}
+}
+
+func TestRunTextWorkflowRejectsLowScoreGeneratedStems(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 3\n  batch_size: 2\n  min_score: 50\n  phonetic_quality: normal\n  quality_profile: off\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	generator := &fakeStemGenerator{
+		responses: []fakeStemResponse{
+			{result: openai.BatchResult{Stems: []string{"crux", "fortis"}}},
+			{result: openai.BatchResult{Stems: []string{"vargphlix", "vertex"}}},
+		},
+	}
+
+	originalGetWorkingDir := getWorkingDir
+	originalNewStemGenerator := newStemGenerator
+	defer func() {
+		getWorkingDir = originalGetWorkingDir
+		newStemGenerator = originalNewStemGenerator
+	}()
+	getWorkingDir = func() (string, error) { return dir, nil }
+	newStemGenerator = func(config.Config) (openai.StemGenerator, error) { return generator, nil }
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	err := Run([]string{
+		"-no-interactive",
+		"-zone", "net=" + fixturePath("small", "net.zone.slice"),
+		"-zone", "com=" + fixturePath("small", "com.zone"),
+		"-generate", "industrial infrastructure names",
+	}, strings.NewReader(""), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	if strings.Contains(stdout.String(), "vargphlix") {
+		t.Fatalf("stdout = %q, want low-score generated stems rejected before lookup", stdout.String())
+	}
+	for _, accepted := range []string{"crux\n", "fortis\n", "vertex\n"} {
+		if !strings.Contains(stdout.String(), accepted) {
+			t.Fatalf("stdout missing %q:\n%s", accepted, stdout.String())
+		}
+	}
+	for _, fragment := range []string{"generation diagnostics", "score_rejected: 1", "phonetic_rejected: 1"} {
 		if !strings.Contains(stderr.String(), fragment) {
 			t.Fatalf("stderr missing %q:\n%s", fragment, stderr.String())
 		}
@@ -1551,7 +1621,7 @@ func TestRunTextWorkflowRejectsWeakGeneratedStems(t *testing.T) {
 func TestRunGenerationRunSummaryIncludesDiagnostics(t *testing.T) {
 	dir := t.TempDir()
 	summaryPath := filepath.Join(dir, "run-summary.json")
-	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("openai:\n  model: yaml-model\ngenerate:\n  count: 2\n  batch_size: 2\n  quality_profile: industrial\n  avoid_substrings: dev,cloud\n  avoid_prefixes: dev,neo\n  avoid_suffixes: ia,ora\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("openai:\n  model: yaml-model\ngenerate:\n  count: 2\n  batch_size: 2\n  min_score: 1\n  quality_profile: industrial\n  avoid_substrings: dev,cloud\n  avoid_prefixes: dev,neo\n  avoid_suffixes: ia,ora\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -2190,7 +2260,7 @@ func TestRunInteractiveGenerationDiagnosticsSummary(t *testing.T) {
 
 func TestRunJSONLWorkflowWithGeneratedStems(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 1\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "domain-finder.yaml"), []byte("generate:\n  count: 2\n  batch_size: 1\n  min_score: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

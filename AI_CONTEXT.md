@@ -17,6 +17,7 @@ available domains.
 - `internal/candidates`: also owns run-level generated rejection diagnostics aggregation
 - `internal/config`: YAML config loading and precedence resolution
 - `internal/genquality`: generated-stem quality profiles and explainable rule-based scoring
+- `internal/namescore`: generated-name phonetic, structural, and brand scoring
 - `internal/match`: stable stem result model and per-zone classification
 - `internal/openai`: batched OpenAI stem generation
   - prompt building, fulfillment policy, and API usage/cost telemetry
@@ -100,6 +101,7 @@ available domains.
   - each batch is normalized, deduped, and processed before the next batch
   - `internal/openai` owns a dedicated prompt builder for the generation contract
   - prompt constraints can steer minimum length, maximum length, syllables, prefix, suffix, style, banned substrings, and the generated quality profile
+  - prompt constraints can also steer generated-name scoring through minimum score and phonetic quality mode
   - generation runs can also stop on explicit budget- and goal-shaped controls such as cost cap, available-hit target, strong-hit target, and stall limit
   - generation runs can also use adaptive refill to shrink effective batch size after repeated underfilled batches
   - generated outputs must be stems only, not FQDNs
@@ -111,6 +113,13 @@ available domains.
   - `avoid_substrings` is also hard-enforced after generation, before lookup
   - `avoid_prefixes` and `avoid_suffixes` are also hard-enforced after generation, before lookup
   - `min_length` is also hard-enforced after generation, before lookup
+  - generated stems are also scored by `internal/namescore` after normalization and before lexical filters
+  - current score model has three components:
+    - phonetic: pronounceability, syllable count, cluster size, vowel spacing, stronger consonants, harder endings
+    - structural: preferred length window and rejection of startup/tech-fragment patterns
+    - brand: industrial/structural anchor words plus light consumer-app penalties
+  - generated stems below `generate.min_score` are rejected before lookup
+  - `generate.phonetic_quality: strict` raises the effective generated score floor to at least `70`
   - generated stems can also be rejected by a generated-only quality profile, currently `industrial`
   - the `industrial` profile now explicitly favors compact 5-7 character names, stronger consonant anchors, denser consonant structure, and harder endings
   - generated acceptance also applies a deterministic family-diversity guard so one near-identical name family does not dominate the accepted pool
@@ -129,6 +138,7 @@ available domains.
     - never shrink below the configured minimum
     - do not grow back during the run
   - text-mode generation runs now print a compact end-of-run diagnostics block summarizing dominant rejection categories
+  - that diagnostics block now also includes score-stage rejection counts and score-bucket distribution
   - text-mode generation runs also print compact underfill totals when one or more batches finish short
   - text-mode generation runs also print a compact `generation stop` block when a stop condition ends the run
   - dry-run uses the same config-resolution and prompt-builder path as a real run
@@ -185,7 +195,7 @@ available domains.
 - `-generate-dry-run` prints the resolved prompt contract and exits without an API call.
 - `-generate-dry-run-format text|json` selects human-readable or machine-readable contract inspection.
 - `-generate-count`, `-generate-batch-size`, and `-generate-model` override generation config.
-- `-generate-style`, `-generate-quality-profile`, `-generate-min-length`, `-generate-max-length`, `-generate-max-syllables`, `-generate-prefix`, `-generate-suffix`, `-generate-avoid-substrings`, `-generate-avoid-prefixes`, and `-generate-avoid-suffixes` steer prompt construction.
+- `-generate-style`, `-generate-quality-profile`, `-generate-phonetic-quality`, `-generate-min-length`, `-generate-min-score`, `-generate-max-length`, `-generate-max-syllables`, `-generate-prefix`, `-generate-suffix`, `-generate-avoid-substrings`, `-generate-avoid-prefixes`, and `-generate-avoid-suffixes` steer prompt construction.
 - `-generate-max-cost-usd`, `-generate-target-available-hits`, `-generate-target-strong-hits`, and `-generate-max-stall-batches` add budget- and goal-driven generation stop conditions.
 - `-generate-adaptive-refill` and `-generate-min-batch-size` control adaptive request shrinking for sparse late-run generation.
 - `generate.max_attempts` and `generate.retry_count` harden generation behavior from YAML/env config.

@@ -15,9 +15,11 @@ const systemPrompt = "You generate candidate domain stems. Return JSON only. Pro
 // final OpenAI instruction payload.
 type PromptInput struct {
 	QualityProfile      string
+	PhoneticQuality     string
 	Theme               string
 	Style               string
 	MinLength           int
+	MinScore            int
 	MaxLength           int
 	MaxSyllables        int
 	Prefix              string
@@ -45,9 +47,11 @@ type Contract struct {
 	MaxAttemptsPerBatch int
 	RetryCount          int
 	QualityProfile      string
+	PhoneticQuality     string
 	Theme               string
 	Style               string
 	MinLength           int
+	MinScore            int
 	MaxLength           int
 	MaxSyllables        int
 	Prefix              string
@@ -69,9 +73,11 @@ type Contract struct {
 func NewPromptInput(theme string, generate config.GenerateConfig) PromptInput {
 	return PromptInput{
 		QualityProfile:      strings.TrimSpace(generate.QualityProfile),
+		PhoneticQuality:     strings.TrimSpace(generate.PhoneticQuality),
 		Theme:               strings.TrimSpace(theme),
 		Style:               strings.TrimSpace(generate.Style),
 		MinLength:           generate.MinLength,
+		MinScore:            generate.MinScore,
 		MaxLength:           generate.MaxLength,
 		MaxSyllables:        generate.MaxSyllables,
 		Prefix:              strings.TrimSpace(generate.Prefix),
@@ -99,9 +105,11 @@ func (b PromptBuilder) BuildContract(cfg config.Config, theme string) Contract {
 		MaxAttemptsPerBatch: cfg.Generate.MaxAttemptsPerBatch,
 		RetryCount:          cfg.Generate.RetryCount,
 		QualityProfile:      input.QualityProfile,
+		PhoneticQuality:     input.PhoneticQuality,
 		Theme:               input.Theme,
 		Style:               input.Style,
 		MinLength:           input.MinLength,
+		MinScore:            input.MinScore,
 		MaxLength:           input.MaxLength,
 		MaxSyllables:        input.MaxSyllables,
 		Prefix:              input.Prefix,
@@ -138,8 +146,14 @@ func (PromptBuilder) BuildUserPrompt(input PromptInput, count int) string {
 		lines = append(lines, "Quality profile: industrial. Prefer compact, harder-edged, infrastructure-like stems with stronger consonant anchors, denser consonant structure, and harder final consonants.")
 		lines = append(lines, "Favor compact 5-7 letter company-name shapes and avoid soft startup-mush, pharma/biotech-like endings, weak generic enterprise-tech shapes, and repetitive same-family near variants.")
 	}
+	if input.PhoneticQuality != "" {
+		lines = append(lines, fmt.Sprintf("Scoring profile: %s phonetic screening. Prefer pronounceable, structurally strong stems that sound like plausible industrial company names.", input.PhoneticQuality))
+	}
 	if input.MinLength > 0 {
 		lines = append(lines, fmt.Sprintf("Constraint: each stem must be at least %d letters.", input.MinLength))
+	}
+	if input.MinScore > 0 {
+		lines = append(lines, fmt.Sprintf("Constraint: target stems that would clear an internal quality score of at least %d.", input.MinScore))
 	}
 	if input.MaxLength > 0 {
 		lines = append(lines, fmt.Sprintf("Constraint: each stem must be no more than %d letters.", input.MaxLength))
@@ -191,9 +205,11 @@ func RenderContract(contract Contract) string {
 	fmt.Fprintf(&out, "  max_attempts: %d\n", contract.MaxAttemptsPerBatch)
 	fmt.Fprintf(&out, "  retry_count: %d\n", contract.RetryCount)
 	fmt.Fprintf(&out, "  quality_profile: %s\n", renderOptional(contract.QualityProfile))
+	fmt.Fprintf(&out, "  phonetic_quality: %s\n", renderOptional(contract.PhoneticQuality))
 	fmt.Fprintf(&out, "  theme: %s\n", renderOptional(contract.Theme))
 	fmt.Fprintf(&out, "  style: %s\n", renderOptional(contract.Style))
 	fmt.Fprintf(&out, "  min_length: %s\n", renderOptionalInt(contract.MinLength))
+	fmt.Fprintf(&out, "  min_score: %s\n", renderOptionalInt(contract.MinScore))
 	fmt.Fprintf(&out, "  max_length: %s\n", renderOptionalInt(contract.MaxLength))
 	fmt.Fprintf(&out, "  max_syllables: %s\n", renderOptionalInt(contract.MaxSyllables))
 	fmt.Fprintf(&out, "  prefix: %s\n", renderOptional(contract.Prefix))
@@ -221,6 +237,7 @@ func RenderContract(contract Contract) string {
 func RenderContractJSON(contract Contract) ([]byte, error) {
 	type constraints struct {
 		MinLength           int      `json:"min_length,omitempty"`
+		MinScore            int      `json:"min_score,omitempty"`
 		MaxLength           int      `json:"max_length,omitempty"`
 		MaxSyllables        int      `json:"max_syllables,omitempty"`
 		Prefix              string   `json:"prefix,omitempty"`
@@ -236,30 +253,33 @@ func RenderContractJSON(contract Contract) ([]byte, error) {
 		MinBatchSize        int      `json:"min_batch_size,omitempty"`
 	}
 	type view struct {
-		Model          string      `json:"model"`
-		GenerateCount  int         `json:"generate_count"`
-		BatchSize      int         `json:"batch_size"`
-		MaxAttempts    int         `json:"max_attempts"`
-		RetryCount     int         `json:"retry_count"`
-		QualityProfile string      `json:"quality_profile,omitempty"`
-		Theme          string      `json:"theme"`
-		Style          string      `json:"style,omitempty"`
-		Constraints    constraints `json:"constraints"`
-		SystemPrompt   string      `json:"system_prompt"`
-		UserPrompt     string      `json:"user_prompt"`
+		Model           string      `json:"model"`
+		GenerateCount   int         `json:"generate_count"`
+		BatchSize       int         `json:"batch_size"`
+		MaxAttempts     int         `json:"max_attempts"`
+		RetryCount      int         `json:"retry_count"`
+		QualityProfile  string      `json:"quality_profile,omitempty"`
+		PhoneticQuality string      `json:"phonetic_quality,omitempty"`
+		Theme           string      `json:"theme"`
+		Style           string      `json:"style,omitempty"`
+		Constraints     constraints `json:"constraints"`
+		SystemPrompt    string      `json:"system_prompt"`
+		UserPrompt      string      `json:"user_prompt"`
 	}
 
 	payload := view{
-		Model:          contract.Model,
-		GenerateCount:  contract.GenerateCount,
-		BatchSize:      contract.BatchSize,
-		MaxAttempts:    contract.MaxAttemptsPerBatch,
-		RetryCount:     contract.RetryCount,
-		QualityProfile: contract.QualityProfile,
-		Theme:          contract.Theme,
-		Style:          contract.Style,
+		Model:           contract.Model,
+		GenerateCount:   contract.GenerateCount,
+		BatchSize:       contract.BatchSize,
+		MaxAttempts:     contract.MaxAttemptsPerBatch,
+		RetryCount:      contract.RetryCount,
+		QualityProfile:  contract.QualityProfile,
+		PhoneticQuality: contract.PhoneticQuality,
+		Theme:           contract.Theme,
+		Style:           contract.Style,
 		Constraints: constraints{
 			MinLength:           contract.MinLength,
+			MinScore:            contract.MinScore,
 			MaxLength:           contract.MaxLength,
 			MaxSyllables:        contract.MaxSyllables,
 			Prefix:              contract.Prefix,

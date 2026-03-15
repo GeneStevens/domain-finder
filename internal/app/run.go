@@ -17,6 +17,7 @@ import (
 	"github.com/genestevens/domain-finder/internal/config"
 	"github.com/genestevens/domain-finder/internal/genquality"
 	"github.com/genestevens/domain-finder/internal/match"
+	"github.com/genestevens/domain-finder/internal/namescore"
 	"github.com/genestevens/domain-finder/internal/openai"
 	"github.com/genestevens/domain-finder/internal/output"
 	"github.com/genestevens/domain-finder/internal/report"
@@ -63,7 +64,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 	generateAdaptiveRefill := fs.Bool("generate-adaptive-refill", false, "shrink effective generation batch size after repeated underfilled batches")
 	generateMinBatchSize := fs.Int("generate-min-batch-size", 0, "minimum effective batch size when adaptive refill is enabled")
 	generateQualityProfile := fs.String("generate-quality-profile", "", "generated-stem quality profile: industrial | off")
+	generatePhoneticQuality := fs.String("generate-phonetic-quality", "", "generated-name scoring profile: normal | strict")
 	generateMinLength := fs.Int("generate-min-length", 0, "minimum letters per generated stem")
+	generateMinScore := fs.Int("generate-min-score", 0, "minimum generated-name score required before lookup")
 	generateMaxLength := fs.Int("generate-max-length", 0, "preferred maximum letters per generated stem")
 	generateMaxSyllables := fs.Int("generate-max-syllables", 0, "preferred maximum syllables per generated stem")
 	generateSuffix := fs.String("generate-suffix", "", "prefer generated stems ending with this text")
@@ -184,7 +187,9 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 			GenerateAdaptiveRefill:      *generateAdaptiveRefill,
 			GenerateMinBatchSize:        *generateMinBatchSize,
 			GenerateQualityProfile:      strings.TrimSpace(*generateQualityProfile),
+			GeneratePhoneticQuality:     strings.TrimSpace(*generatePhoneticQuality),
 			GenerateMinLength:           *generateMinLength,
+			GenerateMinScore:            *generateMinScore,
 			GenerateMaxLength:           *generateMaxLength,
 			GenerateMaxSyllables:        *generateMaxSyllables,
 			GenerateSuffix:              strings.TrimSpace(*generateSuffix),
@@ -204,6 +209,10 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
 		}
 		if trimmedGeneratePrompt != "" || *generateDryRun {
 			cfg.Generate.QualityProfile, err = genquality.NormalizeProfile(cfg.Generate.QualityProfile)
+			if err != nil {
+				return err
+			}
+			cfg.Generate.PhoneticQuality, err = namescore.NormalizeQuality(cfg.Generate.PhoneticQuality)
 			if err != nil {
 				return err
 			}
@@ -518,6 +527,8 @@ func processCandidates(ctx context.Context, lookup backend.Lookup, initialCandid
 			AvoidPrefixes:   cfg.Generate.AvoidPrefixes,
 			AvoidSuffixes:   cfg.Generate.AvoidSuffixes,
 			MinLength:       cfg.Generate.MinLength,
+			MinScore:        cfg.Generate.MinScore,
+			PhoneticQuality: cfg.Generate.PhoneticQuality,
 			QualityProfile:  cfg.Generate.QualityProfile,
 		})
 		diagnostics.MergeBatch(report)
@@ -742,7 +753,9 @@ func buildRunSummary(backendName string, requestedZones []string, filterMode rep
 			MaxAttempts:             cfg.Generate.MaxAttemptsPerBatch,
 			RetryCount:              cfg.Generate.RetryCount,
 			QualityProfile:          cfg.Generate.QualityProfile,
+			PhoneticQuality:         cfg.Generate.PhoneticQuality,
 			MinLength:               cfg.Generate.MinLength,
+			MinScore:                cfg.Generate.MinScore,
 			AvoidSubstrings:         append([]string(nil), cfg.Generate.AvoidSubstrings...),
 			AvoidPrefixes:           append([]string(nil), cfg.Generate.AvoidPrefixes...),
 			AvoidSuffixes:           append([]string(nil), cfg.Generate.AvoidSuffixes...),

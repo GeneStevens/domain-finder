@@ -10,19 +10,26 @@ import (
 
 func TestNewDiagnosticsSortsReasons(t *testing.T) {
 	got := NewDiagnostics(candidates.GenerationDiagnostics{
-		Invalid:          1,
-		Banned:           5,
-		TooShort:         2,
-		BannedSubstrings: 2,
-		BannedPrefixes:   1,
-		BannedSuffixes:   2,
-		QualityRejected:  5,
-		FamilyRejected:   2,
-		Duplicates:       3,
+		Invalid:            1,
+		Banned:             5,
+		TooShort:           2,
+		ScoreRejected:      4,
+		PhoneticRejected:   3,
+		StructuralRejected: 1,
+		BannedSubstrings:   2,
+		BannedPrefixes:     1,
+		BannedSuffixes:     2,
+		QualityRejected:    5,
+		FamilyRejected:     2,
+		Duplicates:         3,
 		QualityReasons: map[string]int{
 			"soft_open_ending":   2,
 			"pharma_like_suffix": 4,
 			"mushy_vowel_flow":   4,
+		},
+		ScoreBuckets: map[string]int{
+			"0-29":  2,
+			"30-49": 2,
 		},
 	})
 	if got == nil {
@@ -39,6 +46,12 @@ func TestNewDiagnosticsSortsReasons(t *testing.T) {
 	}
 	if got.TooShort != 2 {
 		t.Fatalf("TooShort = %d, want 2", got.TooShort)
+	}
+	if got.ScoreRejected != 4 || got.PhoneticRejected != 3 || got.StructuralRejected != 1 {
+		t.Fatalf("got = %#v, want score rejection fields", got)
+	}
+	if len(got.ScoreBuckets) != 2 || got.ScoreBuckets[0].Reason != "0-29" || got.ScoreBuckets[0].Count != 2 {
+		t.Fatalf("ScoreBuckets = %#v, want stable sorted buckets", got.ScoreBuckets)
 	}
 }
 
@@ -65,7 +78,9 @@ func TestWriteArtifactJSON(t *testing.T) {
 			MaxAttempts:             3,
 			RetryCount:              2,
 			QualityProfile:          "industrial",
+			PhoneticQuality:         "strict",
 			MinLength:               6,
+			MinScore:                70,
 			AvoidPrefixes:           []string{"dev", "neo"},
 			AvoidSuffixes:           []string{"ia", "ora"},
 			MaxCostUSD:              1.00,
@@ -116,6 +131,9 @@ func TestWriteArtifactJSON(t *testing.T) {
 	}
 	if generation["min_length"] != float64(6) {
 		t.Fatalf("generation = %#v, want min_length", generation)
+	}
+	if generation["phonetic_quality"] != "strict" || generation["min_score"] != float64(70) {
+		t.Fatalf("generation = %#v, want phonetic quality and min_score", generation)
 	}
 	if generation["max_cost_usd"] != float64(1) || generation["target_available_hits"] != float64(6) || generation["target_strong_hits"] != float64(3) || generation["max_stall_batches"] != float64(4) {
 		t.Fatalf("generation = %#v, want stop condition fields", generation)

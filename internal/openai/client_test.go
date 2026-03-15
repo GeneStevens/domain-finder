@@ -26,8 +26,10 @@ func TestGenerateBatch(t *testing.T) {
 		Builder: PromptBuilder{},
 		Generate: config.GenerateConfig{
 			QualityProfile:  "industrial",
+			PhoneticQuality: "strict",
 			Style:           "developer tool",
 			MinLength:       6,
+			MinScore:        70,
 			MaxLength:       12,
 			MaxSyllables:    3,
 			Prefix:          "dev",
@@ -47,7 +49,7 @@ func TestGenerateBatch(t *testing.T) {
 			if !strings.Contains(string(body), `"json_schema"`) {
 				t.Fatalf("request body = %s, want structured output request", string(body))
 			}
-			for _, fragment := range []string{"developer tool", "Quality profile: industrial", "infrastructure-like stems", "at least 6 letters", "no more than 12 letters", "no more than 3 syllables", "start with `dev`", "end with `io`", "`stack`", "`cloud`", "`neo`", "`ia`"} {
+			for _, fragment := range []string{"developer tool", "Quality profile: industrial", "infrastructure-like stems", "Scoring profile: strict phonetic screening", "at least 6 letters", "quality score of at least 70", "no more than 12 letters", "no more than 3 syllables", "start with `dev`", "end with `io`", "`stack`", "`cloud`", "`neo`", "`ia`"} {
 				if !strings.Contains(string(body), fragment) {
 					t.Fatalf("request body missing %q:\n%s", fragment, string(body))
 				}

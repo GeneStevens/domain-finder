@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/genestevens/domain-finder/internal/genquality"
+	"github.com/genestevens/domain-finder/internal/namescore"
 )
 
 // Collector incrementally normalizes and deduplicates candidate stems while
@@ -15,17 +16,21 @@ type Collector struct {
 
 // BatchReport describes one tolerant candidate-ingest pass.
 type BatchReport struct {
-	Accepted         []string
-	Invalid          int
-	Duplicates       int
-	TooShort         int
-	BannedPrefixes   int
-	BannedSuffixes   int
-	BannedSubstrings int
-	LexicalRejected  int
-	FamilyRejected   int
-	QualityRejected  int
-	QualityReasons   map[string]int
+	Accepted           []string
+	Invalid            int
+	Duplicates         int
+	TooShort           int
+	ScoreRejected      int
+	PhoneticRejected   int
+	StructuralRejected int
+	BannedPrefixes     int
+	BannedSuffixes     int
+	BannedSubstrings   int
+	LexicalRejected    int
+	FamilyRejected     int
+	QualityRejected    int
+	QualityReasons     map[string]int
+	ScoreBuckets       map[string]int
 }
 
 // GeneratedPolicy defines generation-specific acceptance rules applied after
@@ -35,6 +40,8 @@ type GeneratedPolicy struct {
 	AvoidPrefixes   []string
 	AvoidSuffixes   []string
 	MinLength       int
+	MinScore        int
+	PhoneticQuality string
 	QualityProfile  string
 	FamilyLimit     int
 }
@@ -104,6 +111,22 @@ func (c *Collector) AddGeneratedReportLimited(raws []string, limit int, policy G
 			report.Invalid++
 			continue
 		}
+		score := namescore.Evaluate(normalized)
+		if threshold := namescore.EffectiveMinScore(policy.MinScore, policy.PhoneticQuality); threshold > 0 && score.Total < threshold {
+			report.ScoreRejected++
+			report.LexicalRejected++
+			if score.Phonetic == 0 {
+				report.PhoneticRejected++
+			}
+			if score.Structural == 0 {
+				report.StructuralRejected++
+			}
+			if report.ScoreBuckets == nil {
+				report.ScoreBuckets = make(map[string]int)
+			}
+			report.ScoreBuckets[scoreBucket(score.Total)]++
+			continue
+		}
 		if policy.MinLength > 0 && len(normalized) < policy.MinLength {
 			report.TooShort++
 			report.LexicalRejected++
@@ -152,6 +175,21 @@ func (c *Collector) AddGeneratedReportLimited(raws []string, limit int, policy G
 		report.Accepted = append(report.Accepted, normalized)
 	}
 	return report
+}
+
+func scoreBucket(total int) string {
+	switch {
+	case total < 30:
+		return "0-29"
+	case total < 50:
+		return "30-49"
+	case total < 70:
+		return "50-69"
+	case total < 85:
+		return "70-84"
+	default:
+		return "85-100"
+	}
 }
 
 func containsAvoidSubstring(value string, banned []string) bool {

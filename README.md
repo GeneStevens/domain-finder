@@ -170,7 +170,9 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - `-generate-model` overrides the configured OpenAI model
 - `-generate-style` adds reusable style guidance such as `invented SaaS` or `developer tool`
 - `-generate-quality-profile industrial|off` applies a generated-only quality filter after validation and lexical bans
+- `-generate-phonetic-quality normal|strict` controls how aggressively the generated-only scoring stage screens stems
 - `-generate-min-length` requires generated stems to be at least `N` letters long
+- `-generate-min-score` requires generated stems to clear an internal score before lookup
 - `-generate-max-length` prefers stems with no more than `N` letters
 - `-generate-max-syllables` prefers shorter, simpler-sounding stems
 - `-generate-prefix` prefers stems that start with specific text
@@ -210,6 +212,13 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - it is rendered into the prompt contract as a minimum-length rule
   - generated stems shorter than the configured minimum are hard-rejected after normalization
   - run-level diagnostics report these rejections as `too_short`
+- generated runs now also pass through `internal/namescore` after normalization and before lexical bans:
+  - `phonetic` scoring rejects names with too many syllables, oversized consonant clusters, or overly long vowel-free spans
+  - `structural` scoring favors 6-10 character stems and rejects startup-style endings plus obvious low-value tech fragments
+  - `brand` scoring rewards industrial or structural concepts such as `vector`, `crux`, `forge`, or `atlas`
+  - stems below the configured minimum score are hard-rejected before lookup
+  - `-generate-phonetic-quality strict` raises the effective score floor to at least `70`
+  - diagnostics now include `score_rejected`, `phonetic_rejected`, `structural_rejected`, and compact score-bucket counts
 - `generate.quality_profile` is a generated-only taste filter:
   - `industrial` now more aggressively favors stronger, harder-edged infrastructure-like name shapes
   - compact 5-7 letter forms, denser consonant structure, stronger consonant anchors, and harder endings score positively
@@ -281,6 +290,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 
 - `-generate-dry-run` is an inspection mode for prompt tuning
 - It prints the resolved model, generation counts, retry policy, quality profile, theme, style, structural constraints, and the final prompt-builder output
+- It also prints the resolved generated-name scoring policy such as `phonetic_quality` and `min_score`
 - It also prints the resolved stop-condition policy such as cost cap, strong-hit target, and stall limit
 - It also prints adaptive-refill policy such as whether it is enabled and the minimum batch size
 - `-generate-dry-run-format text` keeps the current readable inspection block
@@ -299,6 +309,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 - Poor model output such as duplicates, FQDNs, punctuation, empty values, or noisy text is treated as degraded batch quality rather than silently corrupting the candidate pipeline
 - Generated stems containing banned substrings are rejected before lookup and counted as unusable batch output
 - Generated stems hitting banned prefixes or banned suffixes are also rejected before lookup
+- Generated stems below the configured phonetic/structural/brand score are also rejected before lookup
 - Generated stems can also be rejected by the configured quality profile before lookup, and those rejections are counted separately in generation progress
 - Interactive and text-mode generation runs emit concise stderr status lines showing batch requests, accepted/rejected counts, retries, and completion/failure
 - Underfilled batches are now diagnostic, not fatal:
@@ -320,6 +331,10 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
 
 - After a real generation run in text mode, `domain-finder` prints a compact run-level diagnostics block on `stderr`
 - This summary aggregates generated-stem rejection signals across the run, including:
+  - `too_short`
+  - `score_rejected`
+  - `phonetic_rejected`
+  - `structural_rejected`
   - `banned_substring`
   - `banned_prefix`
   - `banned_suffix`
@@ -327,6 +342,7 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - `family_rejected`
   - `invalid`
   - `duplicates`
+- It also includes a compact score distribution such as `score.30-49` or `score.70-84`
 - Quality reasons reuse the same explainable categories used by the generated quality filter, such as `quality.pharma_like_suffix` or `quality.soft_open_ending`
 - The goal is operator tuning:
   - identify which failure families are dominating
@@ -372,9 +388,10 @@ Committed example config lives at [`domain-finder.yaml.example`](/Users/gene/src
   - generation settings when generation was used
   - configured stop-condition settings and final stop reason when generation was used
   - adaptive-refill settings and final effective batch size when generation was used
+  - generated scoring settings such as `phonetic_quality` and `min_score`
   - underfilled-batch totals when generation was used
   - generation token totals and estimated cost when usage data was available
-  - aggregated generation diagnostics and rejection categories
+  - aggregated generation diagnostics, rejection categories, and score-bucket distribution
 - Use it when you want one stable artifact per run for diffing, archiving, or comparing prompt/profile changes over time
 
 ## Token and cost telemetry
